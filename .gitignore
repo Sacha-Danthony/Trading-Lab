@@ -1,0 +1,10 @@
+venv/
+__pycache__/
+*.pyc
+book.json
+flow.json
+journal.json
+fermees.json
+historique.json
+surface.json
+.DS_Store
