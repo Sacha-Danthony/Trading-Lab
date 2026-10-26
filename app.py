@@ -50,7 +50,7 @@ if "surface" not in st.session_state or not st.session_state.surface:
             st.stop()
 
 if st.session_state.date_calibration == "en direct":
-    st.caption("Surface de vol calibrée en direct.")
+    st.caption("Surface de vol calibrée sur les données Yahoo (retardées).")
 else:
     st.warning(f"Marché fermé : valorisation sur les marks calibrés le {st.session_state.date_calibration}.")
 
