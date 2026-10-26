@@ -47,7 +47,7 @@ def simuler_un_trade(client, profil, rendements, spread, vol, r, T, hedge=False,
     else:
         prix_exec, qty_toi = cotation["bid"], 1
 
-        markout = (mid1 - mid0) * qty_toi / mid0          
+        
 
     markout = (mid1 - mid0) * qty_toi / mid0
     
