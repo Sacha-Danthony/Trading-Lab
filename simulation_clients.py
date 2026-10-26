@@ -1,7 +1,7 @@
 import random
 
 from Pricing import prix_call, prix_put, delta_call, delta_put
-from clients import PROFILS
+from clients import PROFILS, spread_base
 from quoting import decision_client
 from config import TICKER
 
@@ -61,7 +61,7 @@ def simuler_un_trade(client, profil, rendements, spread, vol, r, T, hedge=False,
     return {"spread_capte": (mid0 - prix_exec) * qty_toi / mid0,
             "markout": markout}
 
-def simuler(rendements, n_par_client=2000, spread=0.05, vol=0.18, r=0.05, T_jours=30, seed=0, hedge=False):   
+def simuler(rendements, n_par_client=2000, spread=None, vol=0.18, r=0.05, T_jours=30, seed=0, hedge=False):   
     random.seed(seed)
     T = T_jours / 365
     resultats = {}
@@ -71,7 +71,7 @@ def simuler(rendements, n_par_client=2000, spread=0.05, vol=0.18, r=0.05, T_jour
         spread_capte = markout = 0.0
 
         for _ in range(n_par_client):
-            trade = simuler_un_trade(client, profil, rendements, spread, vol, r, T, hedge)   # <- 2) hedge ajouté ici
+            trade = simuler_un_trade(client, profil, rendements, spread_base(client) if spread is None else spread, vol, r, T, hedge)
             if trade is None:
                 continue
             n_acceptes += 1
