@@ -1,8 +1,9 @@
 import yfinance as yf
 from config import TICKER
 from datetime import datetime, timedelta
+import streamlit as st
 
-
+@st.cache_data(ttl=300)
 def get_spot_price(ticker: str = TICKER) -> float:
     """Dernier prix de clôture du sous-jacent."""
     data = yf.download(ticker, period="5d", progress=False)
@@ -10,12 +11,14 @@ def get_spot_price(ticker: str = TICKER) -> float:
     return float(spot)
 
 
+@st.cache_data(ttl=300)
 def get_maturites(ticker: str = TICKER):
     """Dates d'échéance disponibles."""
     t = yf.Ticker(ticker)
     return t.options
 
 
+@st.cache_data(ttl=300)
 def get_option_chain(ticker: str = TICKER, maturite: str = None):
     """Calls et puts cotés pour une maturité."""
     t = yf.Ticker(ticker)
