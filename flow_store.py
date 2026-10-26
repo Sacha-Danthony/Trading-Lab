@@ -44,4 +44,5 @@ def marquer_traitee(id_rfq, cotation, accepte):
             rfq["accepte"] = accepte
             rfq["bid"] = cotation["bid"]
             rfq["ask"] = cotation["ask"]
+            rfq["mid"] = cotation["mid"]
     sauvegarder_lot(data)

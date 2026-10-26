@@ -105,11 +105,13 @@ onglet_flux, onglet_book, onglet_risque, onglet_pnl, onglet_vol, onglet_journal 
 with onglet_flux:
   st.subheader("Flux client du jour")
 
+  st.checkbox("Mode formation : voir le modèle d'acceptation", key="mode_formation")
+
   if "message_rfq" in st.session_state:
     ok, msg = st.session_state.pop("message_rfq")
     (st.success if ok else st.warning)(msg)
 
-    st.checkbox("Mode formation : voir le modèle d'acceptation", key="mode_formation")
+    
 
   for rfq in lot:
     st.write(f"**{rfq['type']} strike {rfq['strike']}** — {rfq['sens']} — qty {rfq['qty']} — échéance {rfq['maturite']}")
@@ -117,6 +119,8 @@ with onglet_flux:
     if rfq.get("traitee"):
         statut = "✅ ACCEPTÉ" if rfq["accepte"] else "❌ REFUSÉ"
         st.write(f"Bid: {round(rfq['bid'], 3)} / Ask: {round(rfq['ask'], 3)} — {statut}")
+        cotation_r = {"mid": rfq.get("mid", (rfq["bid"] + rfq["ask"]) / 2), "bid": rfq["bid"], "ask": rfq["ask"]}
+        st.caption(explication(rfq, cotation_r, rfq["accepte"], detail=st.session_state.get("mode_formation", False)))
     else:
         base = spread_base(rfq.get("client"))
         suggere = spread_suggere(rfq.get("client"), mk, base)
