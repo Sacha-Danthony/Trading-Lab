@@ -69,15 +69,18 @@ mk = markout_par_client(book, surface, R, spot_actuel)
 pnl_total = sum(pnl_non_realise(p, surface, S=spot_actuel) for p in book)
 pnl_realise = pnl_realise_total()
 
-k1, k2, k3 = st.columns(3)
-k1.metric(TICKER, round(spot_actuel, 2))
-k2.metric("P&L non réalisé", round(pnl_total, 2))
-k3.metric("P&L réalisé", round(pnl_realise, 2))
+def fmt_usd(x, decimales=0):
+    return f"{x:+,.{decimales}f} $".replace(",", " ")
 
-k4, k5, k6 = st.columns(3)
-k4.metric("P&L total", round(pnl_total + pnl_realise, 2))
-k5.metric("Delta net", round(total_delta, 1))
-k6.metric("Vega net", round(total_vega, 1))
+k1, k2, k3, k4, k5, k6 = st.columns(6)
+k1.metric(TICKER, f"{spot_actuel:,.2f} $", border=True)
+k2.metric("P&L non réalisé", fmt_usd(pnl_total), border=True)
+k3.metric("P&L réalisé", fmt_usd(pnl_realise), border=True)
+k4.metric("P&L total", fmt_usd(pnl_total + pnl_realise), border=True)
+k5.metric("Delta net", f"{total_delta:+,.1f} {TICKER}".replace(",", " "), border=True,
+          help="Équivalent en actions : ton gain ou ta perte si le spot bouge de 1 $.")
+k6.metric("Vega net", f"{total_vega:+,.1f} $/vol".replace(",", " "), border=True,
+          help="Gain ou perte en $ si la volatilité implicite monte d'un point.")
 
 limites_depassees = verifier_limites(total_delta, total_vega)
 pire_pnl = pire_scenario(total_delta, total_gamma, total_vega, total_theta, spot_actuel)[0]
@@ -270,11 +273,16 @@ with onglet_risque:
  st.subheader("Greeks du book")
 
  col1, col2, col3, col4 = st.columns(4)
- col1.metric("Delta net", round(total_delta, 2))
- col2.metric("Gamma net", round(total_gamma, 4))
- col3.metric("Vega net", round(total_vega, 2))
- col4.metric("Theta net", round(total_theta, 2))
- for a in verifier_limites(total_delta, total_vega):
+ col1.metric("Delta net", f"{total_delta:+,.1f} {TICKER}".replace(",", " "),
+             help="Équivalent en actions : ton gain ou ta perte si le spot bouge de 1 $.")
+ col2.metric("Gamma net", f"{total_gamma:+,.2f} {TICKER}/$".replace(",", " "),
+             help="De combien ton delta (en actions) change quand le spot bouge de 1 $.")
+ col3.metric("Vega net", f"{total_vega:+,.1f} $/vol".replace(",", " "),
+             help="Gain ou perte en $ si la volatilité implicite monte d'un point.")
+ col4.metric("Theta net", f"{total_theta:+,.1f} $/jour".replace(",", " "),
+             help="Ce que le temps qui passe te rapporte ou te coûte par jour, en $.")
+
+for a in verifier_limites(total_delta, total_vega):
     st.error(f"Limite dépassée : {a}")
     pire_pnl, pire_spot, pire_vol = pire_scenario(total_delta, total_gamma, total_vega, total_theta, spot_actuel)
     texte_pire = f"Pire scénario de stress : {round(pire_pnl)} $ (SPY {pire_spot * 100:+.0f} %, vol {pire_vol:+.0f} pts)"
@@ -345,9 +353,12 @@ with onglet_pnl:
         st.write(f"Position #{position['id']} ({position['type']} {position['strike']}) : {round(pnl, 2)} $")
 
     c1, c2, c3 = st.columns(3)
-    c1.metric("P&L non réalisé", round(pnl_total, 2))
-    c2.metric("P&L réalisé", round(pnl_realise_total(), 2))
-    c3.metric("P&L total", round(pnl_total + pnl_realise_total(), 2))
+    c1.metric("P&L non réalisé", f"{pnl_total:+,.2f} $".replace(",", " "),
+              help="Valeur actuelle des positions ouvertes moins leur prix d'entrée, frais déduits.")
+    c2.metric("P&L réalisé", f"{pnl_realise_total():+,.2f} $".replace(",", " "),
+              help="Gain ou perte sur les positions déjà fermées.")
+    c3.metric("P&L total", f"{pnl_total + pnl_realise_total():+,.2f} $".replace(",", " "),
+              help="Non réalisé plus réalisé.")
 
     st.write("**Positions fermées**")
     fermees = charger_fermees()
