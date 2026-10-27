@@ -24,6 +24,28 @@ R = 0.05
 
 st.set_page_config(page_title="Options & Volatility Trading Lab", layout="wide")
 
+st.markdown("""
+<style>
+html { font-size: 17px; }
+.stApp { background: #080b10; }
+[data-testid="stHeader"] { background: #080b10; }
+[data-testid="stAppDeployButton"] { display: none; }
+[data-testid="stMainBlockContainer"] { padding-top: 2.2rem; }
+[data-testid="stColumn"], [data-testid="column"] {
+    background: #10151d; border: 1px solid #1f2733; border-radius: 4px; padding: 12px 16px;
+}
+[data-testid="stColumn"] [data-testid="stColumn"], [data-testid="column"] [data-testid="column"] {
+    background: transparent; border: none; padding: 0;
+}
+[data-testid="stColumn"] h3, [data-testid="column"] h3, [data-testid="stVerticalBlockBorderWrapper"] h3 {
+    font-size: 13px; letter-spacing: .1em; text-transform: uppercase; color: #ffb454;
+    font-weight: 700; margin: 0 0 10px; padding: 0 0 8px; border-bottom: 1px solid #1f2733;
+}
+[data-testid="stMetricValue"] { font-size: 1.7rem; }
+[data-testid="stMetricValue"] > div { overflow: visible; text-overflow: clip; white-space: nowrap; }
+</style>
+""", unsafe_allow_html=True)
+
 st.title("Options & Volatility Trading Lab")
 
 lot = obtenir_lot_du_jour()
@@ -73,13 +95,13 @@ def fmt_usd(x, decimales=0):
     return f"{x:+,.{decimales}f} $".replace(",", " ")
 
 k1, k2, k3, k4, k5, k6 = st.columns(6)
-k1.metric(TICKER, f"{spot_actuel:,.2f} $", border=True)
-k2.metric("P&L non réalisé", fmt_usd(pnl_total), border=True)
-k3.metric("P&L réalisé", fmt_usd(pnl_realise), border=True)
-k4.metric("P&L total", fmt_usd(pnl_total + pnl_realise), border=True)
-k5.metric("Delta net", f"{total_delta:+,.1f} {TICKER}".replace(",", " "), border=True,
+k1.metric(TICKER, f"{spot_actuel:,.2f} $")
+k2.metric("P&L non réalisé", fmt_usd(pnl_total))
+k3.metric("P&L réalisé", fmt_usd(pnl_realise))
+k4.metric("P&L total", fmt_usd(pnl_total + pnl_realise))
+k5.metric("Delta net", f"{total_delta:+,.1f} {TICKER}".replace(",", " "), 
           help="Équivalent en actions : ton gain ou ta perte si le spot bouge de 1 $.")
-k6.metric("Vega net", f"{total_vega:+,.1f} $/vol".replace(",", " "), border=True,
+k6.metric("Vega net", f"{total_vega:+,.1f} $/vol".replace(",", " "), 
           help="Gain ou perte en $ si la volatilité implicite monte d'un point.")
 
 limites_depassees = verifier_limites(total_delta, total_vega)
@@ -100,8 +122,16 @@ elif seuils_hedge:
 else:
     st.success("Tous les indicateurs sont dans les limites.")
 
-onglet_flux, onglet_book, onglet_risque, onglet_pnl, onglet_vol, onglet_journal = st.tabs(
-    ["Flux", "Book", "Risque", "P&L", "Vol", "Journal"])
+tab_desk, tab_analyse, tab_journal = st.tabs(["Desk", "Analyse", "Journal"])
+
+with tab_desk:
+ onglet_risque, onglet_hedge = st.columns([1, 1], gap="small")
+ onglet_flux = st.container(height=430, border=True)
+ onglet_book = st.container(height=340, border=True)
+with tab_analyse:
+ onglet_pnl, onglet_scenario, onglet_vol = st.columns(3, gap="small")
+with tab_journal:
+ onglet_journal = st.container()
 
 
 # --- Flux client ---
@@ -254,7 +284,19 @@ with onglet_book:
     df_book = pd.DataFrame(lignes_book)
     df_book["#"] = df_book["#"].apply(lambda x: "" if x is None or pd.isna(x) else str(x))
 
-    st.dataframe(df_book.style.map(couleur_pnl, subset=["P&L ($)"]), hide_index=True)
+    def f_num(fmt):
+      def f(x):
+        try:
+          return "" if (x is None or x == "" or pd.isna(x)) else format(x, fmt)
+        except (ValueError, TypeError):
+          return str(x)
+      return f
+
+    st.dataframe(
+      df_book.style.map(couleur_pnl, subset=["P&L ($)"]).format({
+        "Strike": f_num(".0f"), "Qté": f_num("+.0f"), "Entrée": f_num(".2f"), "Valeur": f_num(".2f"),
+        "P&L ($)": f_num("+,.0f"), "Delta": f_num("+,.0f"), "Vega": f_num("+,.0f")}),
+      hide_index=True)
 
     if book:
         positions_par_id = {p["id"]: p for p in book}
@@ -272,7 +314,8 @@ with onglet_book:
 with onglet_risque:
  st.subheader("Greeks du book")
 
- col1, col2, col3, col4 = st.columns(4)
+ col1, col2 = st.columns(2)
+ col3, col4 = st.columns(2)
  col1.metric("Delta net", f"{total_delta:+,.1f} {TICKER}".replace(",", " "),
              help="Équivalent en actions : ton gain ou ta perte si le spot bouge de 1 $.")
  col2.metric("Gamma net", f"{total_gamma:+,.2f} {TICKER}/$".replace(",", " "),
@@ -291,7 +334,7 @@ for a in verifier_limites(total_delta, total_vega):
     else:
         st.caption(f"{texte_pire} | limite : -{round(LIMITE_STRESS)} $")
 
-with onglet_book:
+with onglet_hedge:
  st.subheader("Hedge du vega")
  hedge_v = hedge_vega_suggere(total_vega, surface, spot_actuel, R)
  if hedge_v is None:
@@ -323,7 +366,7 @@ with onglet_book:
     st.rerun()
 
 # --- Scénario ---
-with onglet_risque:
+with onglet_scenario:
     st.subheader("Scénario : et si le marché bouge ?")
     dS = st.slider(f"Mouvement du {TICKER} (%)", -5.0, 5.0, 0.0, step=0.5) / 100 * spot_actuel
     dvol = st.slider("Mouvement de vol (points)", -5.0, 5.0, 0.0, step=0.5)
@@ -350,7 +393,7 @@ with onglet_pnl:
     for position in book:
         pnl = pnl_non_realise(position, surface, S=spot_actuel)
         pnl_total = pnl_total + pnl
-        st.write(f"Position #{position['id']} ({position['type']} {position['strike']}) : {round(pnl, 2)} $")
+        
 
     c1, c2, c3 = st.columns(3)
     c1.metric("P&L non réalisé", f"{pnl_total:+,.2f} $".replace(",", " "),
