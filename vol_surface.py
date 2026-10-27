@@ -3,7 +3,7 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 import math
-from datetime import datetime
+from datetime import datetime, date
 from Pricing import prix_call, vega
 from data import get_spot_price, get_option_chain, filtrer_options, get_maturites
 from config import TICKER
@@ -13,11 +13,8 @@ FICHIER_SURFACE = "surface.json"
 
 
 def calculer_T(date_echeance):
-    aujourdhui = datetime.now()
-    echeance = datetime.strptime(date_echeance, "%Y-%m-%d")
-    jours = (echeance - aujourdhui).days
-    T = jours / 365
-    return T
+    jours = (datetime.strptime(date_echeance, "%Y-%m-%d").date() - date.today()).days
+    return max(jours, 0.5) / 365   # le jour de l'échéance, on compte une demi-journée restante
 
 
 def vol_implicite_call(prix_marche, S, K, T, r):

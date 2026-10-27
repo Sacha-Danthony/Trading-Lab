@@ -20,6 +20,7 @@ from couts import frais_option
 import pandas as pd
 import time 
 import numbers
+from html import escape
 
 R = 0.05
 
@@ -65,14 +66,26 @@ table.t th, table.t td { white-space: nowrap; }
 .kp { display:flex; gap:28px; margin:4px 0 6px; }
 .kp small { display:block; color:#777; font-size:11px; letter-spacing:.08em; }
 .kp b { font-size:22px; }
+.jr table.t td { white-space: normal; }
+.sb { position:fixed; left:0; right:0; bottom:0; height:26px; background:#111; border-top:1px solid #333;
+      display:flex; gap:28px; align-items:center; padding:0 14px; font-size:12px; color:#777; z-index:999; }
+.sb b { color:#e8e8e8; font-weight:400; }
+[data-testid="stMainBlockContainer"] { padding-bottom: 40px; }
+[data-testid="stMarkdownContainer"] { overflow-x: auto; }
 </style>
 """, unsafe_allow_html=True)
 
 
 lot = obtenir_lot_du_jour()
 
+# --- Règlement des options arrivées à échéance (AVANT de construire la surface) ---
+for msg in regler_expirations():
+    st.toast(msg)
+
+aujourdhui = str(date.today())
 maturites_besoin = sorted(set(
-    [p["maturite"] for p in charger_book() if p["maturite"]] + [r["maturite"] for r in lot]
+    [p["maturite"] for p in charger_book() if p["maturite"] and p["maturite"] >= aujourdhui]
+    + [r["maturite"] for r in lot if r["maturite"] >= aujourdhui]
 ))
 
 # --- Surface de vol : calibrée en direct, sinon dernière surface sauvegardée ---
@@ -97,7 +110,6 @@ if st.session_state.date_calibration != "en direct":
 
 surface = st.session_state.surface
 spot_actuel = get_spot_price(TICKER)
-regler_expirations()
 book = charger_book()
 
 total_delta = delta_net_book(book, surface, r=R, S=spot_actuel)
@@ -112,6 +124,10 @@ pnl_realise = pnl_realise_total()
 
 def couleur(x):
     return "g" if x > 0 else "r" if x < 0 else "w"
+
+def signe(x):
+    x = round(x)
+    return f"{x:+,}" if x != 0 else "0"
 
 def spark(valeurs, coul, w=70, h=16):
     if len(valeurs) < 2:
@@ -243,7 +259,7 @@ with tab_desk:
  onglet_risque = c_risque.container(border=False)
  onglet_hedge = c_risque.container(border=False)
 with tab_analyse:
- onglet_pnl, onglet_scenario, onglet_vol = st.columns(3, gap="small")
+ onglet_pnl, onglet_scenario, onglet_vol = st.columns([1.25, 1, 1.1], gap="small")
 with tab_journal:
  onglet_journal = st.container()
 
@@ -516,9 +532,10 @@ with onglet_scenario:
     p_delta, p_gamma, p_vega, p_theta, p_total = pnl_explain(
         total_delta, total_gamma, total_vega, total_theta, dS, dvol, dt)
     lignes_scen = "".join(
-        f'<div class="rw"><span class="a">{nom}</span><span class="{couleur(v)}">{v:+,.0f} $</span></div>'
+        f'<div class="rw"><span class="a">{nom}</span><span class="{couleur(round(v))}">{signe(v)} $</span></div>'
         for nom, v in [("DELTA", p_delta), ("GAMMA", p_gamma), ("VEGA", p_vega), ("THETA", p_theta)])
-    lignes_scen += f'<div class="rw" style="font-weight:700"><span class="w">TOTAL</span><span class="{couleur(p_total)}">{p_total:+,.0f} $</span></div>'
+    lignes_scen += (f'<div class="rw" style="font-weight:700"><span class="w">TOTAL</span>'
+                    f'<span class="{couleur(round(p_total))}">{signe(p_total)} $</span></div>')
     st.markdown(lignes_scen, unsafe_allow_html=True)
 
 
@@ -542,11 +559,11 @@ with onglet_pnl:
     st.markdown('<div class="a" style="margin-top:8px;font-size:13px">POSITIONS FERMÉES</div>', unsafe_allow_html=True)
     fermees = charger_fermees()
     if fermees:
-        df_f = pd.DataFrame([{"#": f["id"], "Type": f["type"], "Strike": f["strike"], "Qté": f["qty"],
+        df_f = pd.DataFrame([{"#": f["id"], "Type": f["type"], "K": f["strike"], "Qté": f["qty"],
                               "Entrée": f["prix_entree"], "Sortie": f["prix_sortie"],
-                              "Date": f["date_sortie"], "P&L réal. ($)": f["pnl_realise"]} for f in fermees])
-        st.markdown(html_table(df_f, {"Strike": ".0f", "Qté": "+.0f", "Entrée": ".2f", "Sortie": ".2f",
-                                      "P&L réal. ($)": "+,.0f"}, colonnes_couleur=("P&L réal. ($)",)),
+                              "Date": str(f["date_sortie"])[5:], "P&L": f["pnl_realise"]} for f in fermees])
+        st.markdown(html_table(df_f, {"K": ".0f", "Qté": "+.0f", "Entrée": ".2f", "Sortie": ".2f",
+                                      "P&L": "+,.0f"}, colonnes_couleur=("P&L",)),
                     unsafe_allow_html=True)
     else:
         st.caption("Aucune position fermée pour l'instant.")
@@ -597,9 +614,9 @@ with onglet_pnl:
 with onglet_journal:
     st.subheader("Journal de trading")
 
-    texte = st.text_area("Qu'as-tu fait aujourd'hui, et pourquoi ?")
-
-    if st.button("Enregistrer dans le journal"):
+    c_txt, c_btn = st.columns([5, 1])
+    texte = c_txt.text_area("Qu'as-tu fait aujourd'hui, et pourquoi ?", height=80)
+    if c_btn.button("ENREGISTRER"):
         if texte.strip():
             greeks = {
                 "delta": round(total_delta, 2),
@@ -610,10 +627,15 @@ with onglet_journal:
             ajouter_entree(texte, greeks)
             st.rerun()
 
-    for entree in reversed(charger_journal()):
-        st.write(f"**{entree['date']}** — {entree['texte']}")
-        st.caption(f"Delta {entree['greeks']['delta']} | Gamma {entree['greeks']['gamma']} | "
-                   f"Vega {entree['greeks']['vega']} | Theta {entree['greeks']['theta']}")
+    entrees = list(reversed(charger_journal()))
+    if entrees:
+        df_j = pd.DataFrame([{"Date": e["date"], "Note": escape(e["texte"]),
+                              "Delta": e["greeks"]["delta"], "Gamma": e["greeks"]["gamma"],
+                              "Vega": e["greeks"]["vega"], "Theta": e["greeks"]["theta"]} for e in entrees])
+        st.markdown('<div class="jr">' + html_table(df_j, {"Delta": "+,.1f", "Gamma": "+,.2f",
+                    "Vega": "+,.1f", "Theta": "+,.1f"}) + "</div>", unsafe_allow_html=True)
+    else:
+        st.caption("Aucune entrée pour l'instant.")
 
 # --- Vol ---
 with onglet_vol:
@@ -659,3 +681,19 @@ with onglet_vol:
     st.markdown('<div class="a" style="margin-top:10px;font-size:13px">SMILE PAR ÉCHÉANCE (VOL %, SELON LE STRIKE)</div>', unsafe_allow_html=True)
     couleurs_smile = ["#ff9f1a", "#3fd0ff", "#ffffff", "#ff5fc8"]
     st.line_chart(pd.DataFrame(courbes, index=strikes_grille), color=couleurs_smile[:len(courbes)])
+
+    # --- Barre d'état ---
+nb_a_coter = sum(1 for r in lot if not r.get("traitee"))
+if limites_depassees:
+    txt_lim = f'<b class="r">{len(limites_depassees)} DÉPASSÉE(S)</b>'
+else:
+    txt_lim = '<b class="g">OK</b>'
+st.markdown(
+    f'<div class="sb">'
+    f'<span>POSITIONS <b>{len(book)}</b></span>'
+    f'<span>RFQ À COTER <b>{nb_a_coter}</b> / {len(lot)}</span>'
+    f'<span>LIMITES {txt_lim}</span>'
+    f'<span>SURFACE <b>{st.session_state.date_calibration}</b></span>'
+    f'<span>DONNÉES <b>Yahoo, retardées</b></span>'
+    f'<span style="margin-left:auto">PAGE CALCULÉE À {maintenant}</span>'
+    f'</div>', unsafe_allow_html=True)

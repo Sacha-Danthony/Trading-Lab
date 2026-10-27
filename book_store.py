@@ -122,6 +122,7 @@ def pnl_non_realise(position, surface, r=0.05, S=None):
 
 def regler_expirations(ticker=TICKER):
     aujourdhui = str(date.today())
+    messages = []
     for position in charger_book():
         if position["type"] == "stock" or position["maturite"] is None:
             continue
@@ -131,4 +132,7 @@ def regler_expirations(ticker=TICKER):
                 continue
             K = position["strike"]
             valeur = max(spot - K, 0) if position["type"] == "call" else max(K - spot, 0)
-            fermer_position(position["id"], valeur)
+            pnl = fermer_position(position["id"], valeur)
+            messages.append(f"Échéance : #{position['id']} {position['type']} {K:.0f} réglé à {valeur:.2f} "
+                            f"(clôture {spot:.2f}) · P&L {pnl:+,.0f} $")
+    return messages
