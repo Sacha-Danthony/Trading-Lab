@@ -62,6 +62,9 @@ table.t tr.tot td { color:#fff; font-weight:700; border-top:1px solid #555; }
 .stButton > button:hover { background:#ffb84d; color:#000; }
 .stButton > button:disabled { background:#333; color:#777; }
 table.t th, table.t td { white-space: nowrap; }
+.kp { display:flex; gap:28px; margin:4px 0 6px; }
+.kp small { display:block; color:#777; font-size:11px; letter-spacing:.08em; }
+.kp b { font-size:22px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -136,6 +139,8 @@ def html_table(df, formats, colonnes_couleur=()):
                 pass
         if col in formats and isinstance(v, numbers.Number):
             txt = format(v, formats[col])
+            if txt.lstrip("+-") .replace("0", "").replace(".", "").replace(",", "") == "":
+                txt = txt.lstrip("+-")
         else:
             txt = str(v)
         cls = couleur(v) if col in colonnes_couleur and isinstance(v, numbers.Number) else ""
@@ -164,6 +169,30 @@ def heatmap_html(df, limite):
         lignes += f'<tr><td class="d">{idx}</td>{cases}</tr>'
     return f'<table class="t">{entete}{lignes}</table>'
 
+def courbe_html(valeurs, etiquettes, coul="#ff9f1a", w=520, h=150):
+    if len(valeurs) < 2:
+        return ""
+    mn, mx = min(valeurs + [0]), max(valeurs + [0])
+    ecart = (mx - mn) or 1
+    xs = [5 + i * (w - 10) / (len(valeurs) - 1) for i in range(len(valeurs))]
+    ys = [h - 20 - (v - mn) / ecart * (h - 30) for v in valeurs]
+    pts = " ".join(f"{x:.1f},{y:.1f}" for x, y in zip(xs, ys))
+    y0 = h - 20 - (0 - mn) / ecart * (h - 30)
+    labels = "".join(f'<text x="{x:.0f}" y="{h - 4}" fill="#777" font-size="10" text-anchor="middle">{e[5:]}</text>'
+                     for x, e in zip(xs, etiquettes))
+    return (f'<svg viewBox="0 0 {w} {h}" width="100%" height="{h}">'
+            f'<line x1="0" y1="{y0:.1f}" x2="{w}" y2="{y0:.1f}" stroke="#333" stroke-dasharray="3,3"/>'
+            f'<polyline points="{pts}" fill="none" stroke="{coul}" stroke-width="2"/>{labels}'
+            f'<text x="{w - 5}" y="{ys[-1] - 6:.0f}" fill="#fff" font-size="11" text-anchor="end">{valeurs[-1]:+,.0f} $</text></svg>')
+
+def couleur_vol(v, lo=10, hi=30):
+    t = max(0, min(1, (v - lo) / (hi - lo)))
+    if t < 0.5:
+        a, b, u = (20, 40, 90), (30, 110, 150), t * 2
+    else:
+        a, b, u = (30, 110, 150), (240, 170, 50), (t - 0.5) * 2
+    r, g, bl = (int(a[i] + (b[i] - a[i]) * u) for i in range(3))
+    return f"rgb({r},{g},{bl})"
 
 # --- Limites (calculées AVANT le bandeau pour le voyant) ---
 limites_depassees = verifier_limites(total_delta, total_vega)
@@ -501,39 +530,42 @@ with onglet_pnl:
     for position in book:
         pnl = pnl_non_realise(position, surface, S=spot_actuel)
         pnl_total = pnl_total + pnl
-        
+    realise = pnl_realise_total()
 
-    c1, c2, c3 = st.columns(3)
-    c1.metric("P&L non réalisé", f"{pnl_total:+,.2f} $".replace(",", " "),
-              help="Valeur actuelle des positions ouvertes moins leur prix d'entrée, frais déduits.")
-    c2.metric("P&L réalisé", f"{pnl_realise_total():+,.2f} $".replace(",", " "),
-              help="Gain ou perte sur les positions déjà fermées.")
-    c3.metric("P&L total", f"{pnl_total + pnl_realise_total():+,.2f} $".replace(",", " "),
-              help="Non réalisé plus réalisé.")
+    st.markdown(
+        f'<div class="kp"><div><small>NON RÉALISÉ</small><b class="{couleur(pnl_total)}">{pnl_total:+,.0f} $</b></div>'
+        f'<div><small>RÉALISÉ</small><b class="{couleur(realise)}">{realise:+,.0f} $</b></div>'
+        f'<div><small>TOTAL</small><b class="{couleur(pnl_total + realise)}">{pnl_total + realise:+,.0f} $</b></div></div>',
+        unsafe_allow_html=True)
+    st.caption("Non réalisé = valeur actuelle des positions ouvertes − prix d'entrée, frais déduits.")
 
-    st.write("**Positions fermées**")
+    st.markdown('<div class="a" style="margin-top:8px;font-size:13px">POSITIONS FERMÉES</div>', unsafe_allow_html=True)
     fermees = charger_fermees()
     if fermees:
-     st.table([{"#": f["id"], "Type": f["type"], "Strike": f["strike"], "Qté": f["qty"],
-               "Entrée": round(f["prix_entree"], 3), "Sortie": round(f["prix_sortie"], 3),
-               "Date": f["date_sortie"], "P&L réalisé ($)": round(f["pnl_realise"], 2)}
-              for f in fermees])
+        df_f = pd.DataFrame([{"#": f["id"], "Type": f["type"], "Strike": f["strike"], "Qté": f["qty"],
+                              "Entrée": f["prix_entree"], "Sortie": f["prix_sortie"],
+                              "Date": f["date_sortie"], "P&L réal. ($)": f["pnl_realise"]} for f in fermees])
+        st.markdown(html_table(df_f, {"Strike": ".0f", "Qté": "+.0f", "Entrée": ".2f", "Sortie": ".2f",
+                                      "P&L réal. ($)": "+,.0f"}, colonnes_couleur=("P&L réal. ($)",)),
+                    unsafe_allow_html=True)
     else:
-     st.caption("Aucune position fermée pour l'instant.")
+        st.caption("Aucune position fermée pour l'instant.")
 
     enregistrer_snapshot(spot_actuel, total_delta, total_gamma, total_vega, total_theta,
-                        pnl_total, pnl_realise_total())
+                         pnl_total, realise)
 
-    # --- Markout par client ---
+   # --- Markout par client ---
     st.subheader("Markout par client")
     if mk:
-        lignes = [{"Client": c, "Trades": v["nb"],
-                "Spread capté ($)": round(v["spread_capte"], 2),
-                "Markout brut ($)": round(v["markout"], 2),
-                "Markout après hedge ($)": round(v["markout_hedge"], 2),
-                "Net après hedge ($)": round(v["spread_capte"] + v["markout_hedge"], 2)} for c, v in mk.items()]
-        st.table(lignes)
-        st.caption("Après hedge = markout brut moins l'effet du delta : ce que ton hedge ne couvre pas.")
+        df_mk = pd.DataFrame([{"Client": c, "N": v["nb"],
+                               "Spread": v["spread_capte"],
+                               "Markout": v["markout"],
+                               "Après hedge": v["markout_hedge"],
+                               "Net": v["spread_capte"] + v["markout_hedge"]} for c, v in mk.items()])
+        cols_mk = ("Spread", "Markout", "Après hedge", "Net")
+        st.markdown(html_table(df_mk, {c: "+,.0f" for c in cols_mk}, colonnes_couleur=cols_mk),
+                    unsafe_allow_html=True)
+        st.caption("Montants en $. Après hedge = markout brut moins l'effet du delta : ce que ton hedge ne couvre pas.")
     else:
         st.caption("Pas encore de trades avec un client identifié.")
 
@@ -542,18 +574,22 @@ with onglet_pnl:
     st.subheader("Historique du desk")
     historique = charger_historique()
     if len(historique) >= 2:
-        st.line_chart({e["date"]: e["pnl_total"] for e in historique})
+        st.markdown(courbe_html([e["pnl_total"] for e in historique], [e["date"] for e in historique]),
+                    unsafe_allow_html=True)
     else:
         st.caption("La courbe apparaîtra dès que tu auras au moins 2 jours d'historique.")
 
-    explication = expliquer_pnl(charger_historique())
+    attribution = expliquer_pnl(historique)
     st.subheader("D'où vient le P&L ?")
-    if explication:
-        st.table([{"Date": l["date"], "Variation ($)": l["variation"], "Delta ($)": l["delta"],
-                "Gamma ($)": l["gamma"], "Theta ($)": l["theta"], "Résidu ($)": l["residu"]}
-                for l in explication])
-        st.caption("Résidu = vega, spread des nouveaux trades, frais et hedges : tout ce que le delta, "
-                "le gamma et le theta du snapshot précédent n'expliquent pas.")
+    if attribution:
+        df_attr = pd.DataFrame([{"Date": l["date"], "Variation": l["variation"], "Delta": l["delta"],
+                                 "Gamma": l["gamma"], "Theta": l["theta"], "Résidu": l["residu"]}
+                                for l in attribution])
+        cols_attr = ("Variation", "Delta", "Gamma", "Theta", "Résidu")
+        st.markdown(html_table(df_attr, {c: "+,.0f" for c in cols_attr}, colonnes_couleur=cols_attr),
+                    unsafe_allow_html=True)
+        st.caption("Montants en $. Résidu = vega, spread des nouveaux trades, frais et hedges : tout ce que le delta, "
+                   "le gamma et le theta du snapshot précédent n'expliquent pas.")
     else:
         st.caption("Il faut au moins 2 jours de snapshots pour expliquer le P&L.")
 
@@ -582,14 +618,35 @@ with onglet_journal:
 # --- Vol ---
 with onglet_vol:
     st.subheader("Surface de volatilité")
-    st.caption(f"Calibration : {st.session_state.date_calibration}")
+    st.caption(f"Calibration : {st.session_state.date_calibration} · options OTM (puts sous le spot, calls au-dessus)")
+
+    # Heatmap : maturités (lignes) × strikes (colonnes)
+    strikes_hm = list(range(round(spot_actuel * 0.9 / 10) * 10, round(spot_actuel * 1.1 / 10) * 10 + 1, 20))
+    entete = "<tr><th></th>" + "".join(f"<th>{k}</th>" for k in strikes_hm) + "</tr>"
+    lignes_hm = ""
+    for m in sorted(surface.keys()):
+        T = calculer_T(m)
+        cases = ""
+        for k in strikes_hm:
+            v = get_vol(K=k, T=T, surface=surface)
+            if v is None:
+                cases += "<td></td>"
+            else:
+                cases += f'<td style="background:{couleur_vol(v * 100)};color:#fff;text-align:center">{v * 100:.1f}</td>'
+        lignes_hm += f'<tr><td class="d">{round(T * 365)}J</td>{cases}</tr>'
+    st.markdown(f'<table class="t">{entete}{lignes_hm}</table>', unsafe_allow_html=True)
+
+    # Structure par terme : vol ATM par échéance
     lignes_vol = []
     for m in sorted(surface.keys()):
         T = calculer_T(m)
         vol_atm = get_vol(K=round(spot_actuel), T=T, surface=surface)
         if vol_atm is not None:
-            lignes_vol.append({"Échéance": m, "Jours": round(T * 365), "Vol ATM (%)": round(vol_atm * 100, 2)})
-    st.table(lignes_vol)
+            lignes_vol.append({"Échéance": m, "Jours": round(T * 365), "Vol ATM (%)": vol_atm * 100})
+    st.markdown('<div class="a" style="margin-top:10px;font-size:13px">STRUCTURE PAR TERME (ATM)</div>', unsafe_allow_html=True)
+    st.markdown(html_table(pd.DataFrame(lignes_vol), {"Vol ATM (%)": ".2f"}), unsafe_allow_html=True)
+
+    # Smile par échéance
     dates_smile = sorted(surface.keys())
     pas = max(1, len(dates_smile) // 4)
     dates_smile = dates_smile[::pas][:4]
@@ -599,5 +656,6 @@ with onglet_vol:
         T = calculer_T(m)
         vols = [get_vol(K=k, T=T, surface=surface) for k in strikes_grille]
         courbes[m] = [None if v is None else v * 100 for v in vols]
-    st.write("**Smile de volatilité par échéance** (vol implicite en %, selon le strike)")
-    st.line_chart(pd.DataFrame(courbes, index=strikes_grille))
+    st.markdown('<div class="a" style="margin-top:10px;font-size:13px">SMILE PAR ÉCHÉANCE (VOL %, SELON LE STRIKE)</div>', unsafe_allow_html=True)
+    couleurs_smile = ["#ff9f1a", "#3fd0ff", "#ffffff", "#ff5fc8"]
+    st.line_chart(pd.DataFrame(courbes, index=strikes_grille), color=couleurs_smile[:len(courbes)])
