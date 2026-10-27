@@ -22,6 +22,7 @@ import time
 import numbers
 from html import escape
 import altair as alt
+import numpy as np
 
 R = 0.05
 
@@ -562,15 +563,32 @@ with onglet_spy:
             f'<div><small>VARIATION</small><b class="{couleur(var)}">{var:+.2f} %</b></div>'
             f'<div><small>VOLUME</small><b class="w">{h["Volume"].sum() / 1e6:,.1f} M</b></div></div>',
             unsafe_allow_html=True)
+
+        clotures = get_historique_spot(TICKER, "3M")["Close"]
+        rendements = np.log(clotures / clotures.shift(1)).dropna()
+        vol_real = rendements.tail(20).std() * np.sqrt(252) * 100
+        vol_impl = get_vol(K=round(spot_actuel), T=30 / 365, surface=surface)
+        if vol_impl is not None:
+            vol_impl = vol_impl * 100
+            ecart = vol_impl - vol_real
+            st.markdown(
+                f'<div class="kp"><div><small>VOL RÉALISÉE 20J</small><b class="w">{vol_real:.1f} %</b></div>'
+                f'<div><small>VOL IMPLICITE ATM 30J</small><b class="w">{vol_impl:.1f} %</b></div>'
+                f'<div><small>IMPLICITE − RÉALISÉE</small><b class="a">{ecart:+.1f} pts</b></div></div>',
+                unsafe_allow_html=True)
         duree = {"1J": "5 minutes", "5J": "30 minutes"}.get(periode, "1 jour")
         st.caption(f"1 bougie = {duree} · heure de New York · données Yahoo retardées · molette pour zoomer, glisser pour se déplacer")
 
         df_c = h.reset_index()
         df_c = df_c.rename(columns={df_c.columns[0]: "Date"})
         df_c["Date"] = df_c["Date"].dt.tz_localize(None)
+        df_c["i"] = range(len(df_c))
         format_x = {"1J": "%H:%M", "5J": "%d/%m %H:%M"}.get(periode, "%d/%m")
-        base = alt.Chart(df_c).encode(x=alt.X("Date:T", title=None, axis=alt.Axis(format=format_x),
-                                              scale=alt.Scale(nice=False, padding=8)))
+        etiquettes = df_c["Date"].dt.strftime(format_x).tolist()
+        pas = max(1, len(df_c) // 8)
+        expr = "[" + ",".join(f"'{e}'" for e in etiquettes) + "][datum.value]"
+        base = alt.Chart(df_c).encode(x=alt.X("i:Q", title=None, scale=alt.Scale(nice=False, padding=8),
+                                              axis=alt.Axis(values=list(range(0, len(df_c), pas)), labelExpr=expr)))
         echelle = alt.Scale(zero=False)
         infos = [alt.Tooltip("Date:T", title="Date", format="%d/%m %H:%M"),
                  alt.Tooltip("Open:Q", title="Ouverture", format=".2f"),
