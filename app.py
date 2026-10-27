@@ -8,7 +8,7 @@ from book_greeks import (delta_net_book, gamma_net_book, vega_net_book, theta_ne
                          valeur_position, hedge_delta,delta_position, gamma_position, vega_position, multiplicateur)
 from limites import (verifier_limites, risque_apres_trade, trade_bloque, hedge_necessaire, skew_suggere, hedge_vega_necessaire,
                          LIMITE_STRESS, LIMITE_DELTA, LIMITE_VEGA, grille_stress, SEUIL_HEDGE, SEUIL_HEDGE_VEGA)
-from data import get_spot_price
+from data import get_spot_price, get_historique_spot,PERIODES
 from markout import markout_par_client, spread_suggere
 from pnl import pnl_explain
 from journal import ajouter_entree, charger_journal
@@ -21,6 +21,7 @@ import pandas as pd
 import time 
 import numbers
 from html import escape
+import altair as alt
 
 R = 0.05
 
@@ -72,6 +73,7 @@ table.t th, table.t td { white-space: nowrap; }
 .sb b { color:#e8e8e8; font-weight:400; }
 [data-testid="stMainBlockContainer"] { padding-bottom: 40px; }
 [data-testid="stMarkdownContainer"] { overflow-x: auto; }
+[data-testid="stElementToolbar"] { display: none; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -282,6 +284,7 @@ with tab_desk:
  onglet_risque = c_risque.container(border=False)
  onglet_hedge = c_risque.container(border=False)
 with tab_analyse:
+ onglet_spy, = st.columns(1)
  onglet_pnl, onglet_scenario, onglet_vol = st.columns([1.25, 1, 1.1], gap="small")
 with tab_journal:
  onglet_journal = st.container()
@@ -539,6 +542,64 @@ with onglet_scenario:
     st.markdown(lignes_scen, unsafe_allow_html=True)
 
 
+# --- Cours du SPY ---
+with onglet_spy:
+    st.subheader(f"{TICKER} · cours")
+    c_per, c_type = st.columns([3, 2])
+    periode = c_per.segmented_control("Période", list(PERIODES), default="1J",
+                                      key="periode_spy", label_visibility="collapsed") or "1J"
+    type_g = c_type.segmented_control("Type", ["Ligne", "Chandeliers"], default="Ligne",
+                                      key="type_spy", label_visibility="collapsed") or "Ligne"
+    h = get_historique_spot(TICKER, periode)
+    if len(h) >= 2:
+        ouv, haut, bas, der = h["Open"].iloc[0], h["High"].max(), h["Low"].min(), h["Close"].iloc[-1]
+        var = (der / ouv - 1) * 100
+        st.markdown(
+            f'<div class="kp"><div><small>OUVERTURE</small><b class="w">{ouv:.2f}</b></div>'
+            f'<div><small>PLUS HAUT</small><b class="w">{haut:.2f}</b></div>'
+            f'<div><small>PLUS BAS</small><b class="w">{bas:.2f}</b></div>'
+            f'<div><small>DERNIER</small><b class="w">{der:.2f}</b></div>'
+            f'<div><small>VARIATION</small><b class="{couleur(var)}">{var:+.2f} %</b></div>'
+            f'<div><small>VOLUME</small><b class="w">{h["Volume"].sum() / 1e6:,.1f} M</b></div></div>',
+            unsafe_allow_html=True)
+        duree = {"1J": "5 minutes", "5J": "30 minutes"}.get(periode, "1 jour")
+        st.caption(f"1 bougie = {duree} · heure de New York · données Yahoo retardées · molette pour zoomer, glisser pour se déplacer")
+
+        df_c = h.reset_index()
+        df_c = df_c.rename(columns={df_c.columns[0]: "Date"})
+        df_c["Date"] = df_c["Date"].dt.tz_localize(None)
+        format_x = {"1J": "%H:%M", "5J": "%d/%m %H:%M"}.get(periode, "%d/%m")
+        base = alt.Chart(df_c).encode(x=alt.X("Date:T", title=None, axis=alt.Axis(format=format_x),
+                                              scale=alt.Scale(nice=False, padding=8)))
+        echelle = alt.Scale(zero=False)
+        infos = [alt.Tooltip("Date:T", title="Date", format="%d/%m %H:%M"),
+                 alt.Tooltip("Open:Q", title="Ouverture", format=".2f"),
+                 alt.Tooltip("High:Q", title="Haut", format=".2f"),
+                 alt.Tooltip("Low:Q", title="Bas", format=".2f"),
+                 alt.Tooltip("Close:Q", title="Clôture", format=".2f")]
+
+        if type_g == "Ligne":
+            trace = base.mark_line(color="#ff9f1a", strokeWidth=1.6).encode(y=alt.Y("Close:Q", title=None, scale=echelle))
+        else:
+            coul = alt.condition("datum.Close >= datum.Open", alt.value("#2ee66b"), alt.value("#ff4d4d"))
+            largeur = max(2, min(8, int(900 / len(df_c))))
+            meches = base.mark_rule().encode(y=alt.Y("Low:Q", title=None, scale=echelle), y2="High:Q", color=coul)
+            corps = base.mark_bar(size=largeur).encode(y="Open:Q", y2="Close:Q", color=coul)
+            trace = meches + corps
+
+        survol = alt.selection_point(on="pointerover", nearest=True, fields=["Date"], empty=False)
+        points = base.mark_point(opacity=0).encode(y="Close:Q", tooltip=infos).add_params(survol)
+        ligne_v = base.mark_rule(color="#777").encode(opacity=alt.condition(survol, alt.value(1), alt.value(0)))
+        graphe = (trace + points + ligne_v).properties(height=260, background="#050505").interactive(bind_y=False)
+        graphe = graphe.configure_axis(
+            labelFont="DejaVu Sans Mono, Consolas, monospace", labelColor="#ff9f1a", labelFontSize=11,
+            gridColor="#1a1a1a", domainColor="#333", tickColor="#333",
+        ).configure_view(strokeWidth=0)
+        st.altair_chart(graphe, use_container_width=True)
+    else:
+        st.caption("Pas de données disponibles pour cette période.")
+
+
 # --- P&L ---
 with onglet_pnl:
     st.subheader("P&L du book")
@@ -585,20 +646,6 @@ with onglet_pnl:
         st.caption("Montants en $. Après hedge = markout brut moins l'effet du delta : ce que ton hedge ne couvre pas.")
     else:
         st.caption("Pas encore de trades avec un client identifié.")
-
-    st.subheader("Statistiques des RFQ")
-    histo_rfq = charger_historique_rfq()
-    if histo_rfq:
-        stats = stats_rfq(histo_rfq)
-        nb_jours = len(set(l["date"] for l in histo_rfq))
-        df_s = pd.DataFrame([{"Client": c, "RFQ": s["n"], "Acceptées": s["acceptees"],
-                              "Taux (%)": s["acceptees"] / s["n"] * 100,
-                              "Spread moyen (%)": s["spread_total"] / s["n"] * 100}
-                             for c, s in stats.items()])
-        st.markdown(html_table(df_s, {"Taux (%)": ".0f", "Spread moyen (%)": ".1f"}), unsafe_allow_html=True)
-        st.caption(f"{len(histo_rfq)} RFQ cotées sur {nb_jours} jour(s). Spread = (ask − bid) / mid.")
-    else:
-        st.caption("Aucune RFQ cotée pour l'instant.")
 
 # --- Historique ---
 with onglet_pnl:

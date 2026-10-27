@@ -61,3 +61,12 @@ def get_cloture(ticker, jour):
     if data.empty:
         return None
     return float(data["Close"].iloc[0].item())
+
+PERIODES = {"1J": ("1d", "5m"), "5J": ("5d", "30m"), "1M": ("1mo", "1d"), "3M": ("3mo", "1d"), "1A": ("1y", "1d")}
+
+
+@st.cache_data(ttl=300)
+def get_historique_spot(ticker, periode):
+    p, intervalle = PERIODES[periode]
+    data = yf.Ticker(ticker).history(period=p, interval=intervalle)
+    return data[["Open", "High", "Low", "Close", "Volume"]]
