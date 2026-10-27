@@ -66,6 +66,18 @@ def enregistrer_rfq_traitee(rfq, cotation, accepte):
     with open(FICHIER_HISTO_RFQ, "w") as f:
         json.dump(historique, f, indent=2)
 
+def stats_rfq(historique):
+    stats = {}
+    for ligne in historique:
+        client = ligne["client"]
+        if client not in stats:
+            stats[client] = {"n": 0, "acceptees": 0, "spread_total": 0.0}
+        stats[client]["n"] += 1                         
+        if ligne["accepte"]:
+            stats[client]["acceptees"] += 1              
+        spread = (ligne["ask"] - ligne["bid"]) / ligne["mid"]      
+        stats[client]["spread_total"] += spread             
+    return stats
 
 def marquer_traitee(id_rfq, cotation, accepte):
     data = charger_lot()

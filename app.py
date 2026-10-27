@@ -1,6 +1,6 @@
 import streamlit as st
 from datetime import date, datetime
-from flow_store import obtenir_lot_du_jour, marquer_traitee
+from flow_store import obtenir_lot_du_jour, marquer_traitee,charger_historique_rfq, stats_rfq
 from book_store import charger_book, pnl_non_realise, fermer_position, ajouter_hedge, regler_expirations, pnl_realise_total, charger_fermees
 from vol_surface import construire_surface, sauvegarder_surface, charger_surface, calculer_T, get_vol
 from quoting import coter, decision_client, executer_rfq, proba_acceptation, explication 
@@ -585,6 +585,20 @@ with onglet_pnl:
         st.caption("Montants en $. Après hedge = markout brut moins l'effet du delta : ce que ton hedge ne couvre pas.")
     else:
         st.caption("Pas encore de trades avec un client identifié.")
+
+    st.subheader("Statistiques des RFQ")
+    histo_rfq = charger_historique_rfq()
+    if histo_rfq:
+        stats = stats_rfq(histo_rfq)
+        nb_jours = len(set(l["date"] for l in histo_rfq))
+        df_s = pd.DataFrame([{"Client": c, "RFQ": s["n"], "Acceptées": s["acceptees"],
+                              "Taux (%)": s["acceptees"] / s["n"] * 100,
+                              "Spread moyen (%)": s["spread_total"] / s["n"] * 100}
+                             for c, s in stats.items()])
+        st.markdown(html_table(df_s, {"Taux (%)": ".0f", "Spread moyen (%)": ".1f"}), unsafe_allow_html=True)
+        st.caption(f"{len(histo_rfq)} RFQ cotées sur {nb_jours} jour(s). Spread = (ask − bid) / mid.")
+    else:
+        st.caption("Aucune RFQ cotée pour l'instant.")
 
 # --- Historique ---
 with onglet_pnl:
