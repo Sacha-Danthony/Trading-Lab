@@ -231,6 +231,17 @@ elif seuils_hedge:
 else:
     statut = '<span class="g">● ALL LIMITS OK</span>'
 
+etat_limites = "rouge" if limites_depassees else "ambre" if seuils_hedge else "vert"
+precedent = st.session_state.get("etat_limites")
+if precedent is not None and etat_limites != precedent:
+    if etat_limites == "rouge":
+        st.toast("Limite dépassée : " + " · ".join(limites_depassees), icon="🔴")
+    elif etat_limites == "ambre":
+        st.toast("Seuil de hedge atteint : " + " · ".join(seuils_hedge), icon="🟠")
+    else:
+        st.toast("Toutes les limites sont de nouveau respectées", icon="🟢")
+st.session_state["etat_limites"] = etat_limites
+
 # --- Barre du haut + bandeau ---
 maintenant = datetime.now().strftime("%d/%m/%Y · %H:%M")
 st.markdown(f"""
@@ -272,7 +283,7 @@ with onglet_flux:
 
   if "message_rfq" in st.session_state:
     ok, msg = st.session_state.pop("message_rfq")
-    (st.success if ok else st.warning)(msg)
+    st.toast(msg, icon="✅" if ok else "❌")
 
   # 1) Blotter : une ligne par RFQ
   lignes_rfq = []
