@@ -7,7 +7,7 @@ from quoting import coter, decision_client, executer_rfq, proba_acceptation, exp
 from book_greeks import (delta_net_book, gamma_net_book, vega_net_book, theta_net_book,
                          valeur_position, hedge_delta,delta_position, gamma_position, vega_position, multiplicateur)
 from limites import (verifier_limites, risque_apres_trade, trade_bloque, hedge_necessaire, skew_suggere, hedge_vega_necessaire,
-                         pire_scenario, LIMITE_STRESS, LIMITE_DELTA, LIMITE_VEGA, grille_stress, SEUIL_HEDGE, SEUIL_HEDGE_VEGA)
+                         LIMITE_STRESS, LIMITE_DELTA, LIMITE_VEGA, grille_stress, SEUIL_HEDGE, SEUIL_HEDGE_VEGA)
 from data import get_spot_price
 from markout import markout_par_client, spread_suggere
 from pnl import pnl_explain
@@ -368,35 +368,6 @@ with onglet_flux:
       st.session_state["message_rfq"] = (accepte, explication(rfq, cotation, accepte, detail=formation))
       st.rerun()
 
-def couleur_pnl(v):
-    if v is None or pd.isna(v):
-        return ""
-    if v > 0:
-        return "color: #4fd18b"
-    if v < 0:
-        return "color: #ff7b7b"
-    return ""
-
-def jauge(label, valeur, limite):
-    ratio = max(-1, min(1, valeur / limite))
-    utilisation = abs(ratio)
-    couleur = "#5aa9ff" if utilisation < 0.6 else "#ffb454" if utilisation < 0.9 else "#ff7b7b"
-    gauche = 50 if ratio >= 0 else 50 + ratio * 50
-    largeur = utilisation * 50
-    st.markdown(
-        f'<div style="display:flex;justify-content:space-between;font-size:13px"><span>{label}</span><span>{valeur:+,.1f} / ±{limite:,.0f}</span></div>'
-        f'<div style="position:relative;height:8px;background:#1b2231;margin:4px 0 14px">'
-        f'<div style="position:absolute;top:0;height:100%;left:{gauche}%;width:{largeur}%;background:{couleur}"></div>'
-        f'<div style="position:absolute;left:50%;top:-2px;width:1px;height:12px;background:#3a4558"></div></div>',
-        unsafe_allow_html=True)
-
-def couleur_stress(v):
-    intensite = min(abs(v) / LIMITE_STRESS, 1) * 0.45
-    if v < 0:
-        return f"background-color: rgba(255,123,123,{intensite:.2f}); color: #f3d6d6"
-    if v > 0:
-        return f"background-color: rgba(79,209,139,{intensite:.2f}); color: #d3f0e1"
-    return ""
     
 # --- Book ---
 with onglet_book:
