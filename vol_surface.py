@@ -2,11 +2,12 @@ import json
 import os
 import numpy as np
 import matplotlib.pyplot as plt
+import math
 from datetime import datetime
-
 from Pricing import prix_call, vega
 from data import get_spot_price, get_option_chain, filtrer_options, get_maturites
 from config import TICKER
+
 
 FICHIER_SURFACE = "surface.json"
 
@@ -40,19 +41,31 @@ def construire_smile(ticker, date_echeance, r=0.05):
     spot = get_spot_price(ticker)
     calls, puts = get_option_chain(ticker, date_echeance)
     calls = filtrer_options(calls, spot)
+    puts = filtrer_options(puts, spot)
     T = calculer_T(date_echeance)
 
     strikes = []
     vols = []
 
-    for index, ligne in calls.iterrows():
+    # Sous le spot : puts OTM, convertis en call équivalent par la parité call-put
+    for index, ligne in puts[puts["strike"] < spot].iterrows():
+        prix_put = (ligne["bid"] + ligne["ask"]) / 2
+        prix_call_equiv = prix_put + spot - ligne["strike"] * math.exp(-r * T)
+        vol = vol_implicite_call(prix_marche=prix_call_equiv, S=spot, K=ligne["strike"], T=T, r=r)
+        if vol is not None:
+            strikes.append(ligne["strike"])
+            vols.append(vol)
+
+    # Au-dessus du spot : calls OTM
+    for index, ligne in calls[calls["strike"] >= spot].iterrows():
         prix_mid = (ligne["bid"] + ligne["ask"]) / 2
         vol = vol_implicite_call(prix_marche=prix_mid, S=spot, K=ligne["strike"], T=T, r=r)
         if vol is not None:
             strikes.append(ligne["strike"])
             vols.append(vol)
 
-    return strikes, vols
+    paires = sorted(zip(strikes, vols))
+    return [k for k, v in paires], [v for k, v in paires]
 
 
 def lisser_smile(strikes, vols, degre=2):

@@ -147,10 +147,29 @@ def html_table(df, formats, colonnes_couleur=()):
         lignes += f"<tr{cls_tr}>" + "".join(cellule(c, row[c]) for c in df.columns) + "</tr>"
     return f'<table class="t"><tr>{entete}</tr>{lignes}</table>'
 
+def heatmap_html(df, limite):
+    entete = "<tr><th></th>" + "".join(f"<th>{c}</th>" for c in df.columns) + "</tr>"
+    lignes = ""
+    for idx, row in df.iterrows():
+        cases = ""
+        for v in row:
+            a = min(abs(v) / limite, 1) * 0.8 + 0.1
+            if v < 0:
+                fond = f"rgba(255,77,77,{a:.2f})"
+            elif v > 0:
+                fond = f"rgba(46,230,107,{a:.2f})"
+            else:
+                fond = "#1a1a1a"
+            cases += f'<td style="background:{fond};color:#fff;text-align:center">{v:,.0f}</td>'
+        lignes += f'<tr><td class="d">{idx}</td>{cases}</tr>'
+    return f'<table class="t">{entete}{lignes}</table>'
+
 
 # --- Limites (calculées AVANT le bandeau pour le voyant) ---
 limites_depassees = verifier_limites(total_delta, total_vega)
-pire_pnl = pire_scenario(total_delta, total_gamma, total_vega, total_theta, spot_actuel)[0]
+df_stress = pd.DataFrame(grille_stress(total_delta, total_gamma, total_vega, total_theta, spot_actuel)).T
+pire_pnl = df_stress.min().min()
+pire_vol_lbl, pire_spot_lbl = df_stress.stack().idxmin()
 if pire_pnl < -LIMITE_STRESS:
     limites_depassees.append(f"Stress {round(pire_pnl):,} $ au-delà de la limite (−{round(LIMITE_STRESS):,} $)")
 
@@ -398,18 +417,16 @@ with onglet_risque:
          barre = f'<div class="lim"><i style="width:{max(min(pct, 100), 1):.0f}%;background:{coul}"></i></div>'
      return f'<div class="rw"><span class="a">{label}</span><span class="{cls}">{valeur}</span></div>{barre}'
 
- pire_pnl, pire_spot, pire_vol = pire_scenario(total_delta, total_gamma, total_vega, total_theta, spot_actuel)
-
  html = (
      ligne("DELTA", f"{total_delta:+,.1f} {TICKER}", abs(total_delta) / LIMITE_DELTA * 100)
      + ligne("GAMMA", f"{total_gamma:+,.2f} {TICKER}/$")
      + ligne("VEGA", f"{total_vega:+,.1f} $/vol", abs(total_vega) / LIMITE_VEGA * 100)
      + ligne("THETA", f"{total_theta:+,.1f} $/jour", cls=couleur(total_theta))
-     + ligne("PIRE STRESS", f"{pire_pnl:+,.0f} / {LIMITE_STRESS:,.0f} $",
+     + ligne("PIRE STRESS (GRILLE)", f"{pire_pnl:+,.0f} / {LIMITE_STRESS:,.0f} $",
              abs(min(pire_pnl, 0)) / LIMITE_STRESS * 100, cls=couleur(pire_pnl))
  )
  st.markdown(html, unsafe_allow_html=True)
- st.caption(f"Pire scénario : SPY {pire_spot * 100:+.0f} %, vol {pire_vol:+.0f} pts")
+ st.caption(f"Pire case de la grille : {TICKER} {pire_spot_lbl}, {pire_vol_lbl}")
 
  for msg in limites_depassees:
      st.error(msg)
@@ -457,22 +474,23 @@ with onglet_hedge:
 
 # --- Scénario ---
 with onglet_scenario:
-    st.subheader("Scénario : et si le marché bouge ?")
-    dS = st.slider(f"Mouvement du {TICKER} (%)", -5.0, 5.0, 0.0, step=0.5) / 100 * spot_actuel
-    dvol = st.slider("Mouvement de vol (points)", -5.0, 5.0, 0.0, step=0.5)
-    dt = st.slider("Jours qui passent", 0, 10, 1)
+    st.subheader("Stress test · P&L du book ($)")
+    st.markdown(heatmap_html(df_stress, LIMITE_STRESS), unsafe_allow_html=True)
+    st.caption(f"Plus la case est foncée, plus la perte approche la limite ({LIMITE_STRESS:,.0f} $).")
 
-    st.markdown("**Stress test : P&L du book ($)**")
-    df_stress = pd.DataFrame(grille_stress(total_delta, total_gamma, total_vega, total_theta, spot_actuel)).T
-    st.dataframe(df_stress.style.map(couleur_stress).format("{:,.0f}"))
+    st.subheader("Scénario : et si le marché bouge ?")
+    s1, s2, s3 = st.columns(3)
+    dS = s1.slider(f"{TICKER} (%)", -5.0, 5.0, 0.0, step=0.5) / 100 * spot_actuel
+    dvol = s2.slider("Vol (pts)", -5.0, 5.0, 0.0, step=0.5)
+    dt = s3.slider("Jours", 0, 10, 1)
 
     p_delta, p_gamma, p_vega, p_theta, p_total = pnl_explain(
-    total_delta, total_gamma, total_vega, total_theta, dS, dvol, dt)
-    st.table([{"Source": "Delta", "P&L ($)": round(p_delta, 2)},
-    {"Source": "Gamma", "P&L ($)": round(p_gamma, 2)},
-    {"Source": "Vega", "P&L ($)": round(p_vega, 2)},
-    {"Source": "Theta", "P&L ($)": round(p_theta, 2)},
-    {"Source": "Total", "P&L ($)": round(p_total, 2)}])
+        total_delta, total_gamma, total_vega, total_theta, dS, dvol, dt)
+    lignes_scen = "".join(
+        f'<div class="rw"><span class="a">{nom}</span><span class="{couleur(v)}">{v:+,.0f} $</span></div>'
+        for nom, v in [("DELTA", p_delta), ("GAMMA", p_gamma), ("VEGA", p_vega), ("THETA", p_theta)])
+    lignes_scen += f'<div class="rw" style="font-weight:700"><span class="w">TOTAL</span><span class="{couleur(p_total)}">{p_total:+,.0f} $</span></div>'
+    st.markdown(lignes_scen, unsafe_allow_html=True)
 
 
 # --- P&L ---
