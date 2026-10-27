@@ -5,6 +5,7 @@ from datetime import date
 from flow import generer_lot_rfq
 
 FICHIER_FLOW = "flow.json"
+FICHIER_HISTO_RFQ = "rfq_historique.json"
 
 
 def charger_lot():
@@ -36,6 +37,36 @@ def obtenir_lot_du_jour():
     return nouveau_lot
 
 
+def charger_historique_rfq():
+    if not os.path.exists(FICHIER_HISTO_RFQ):
+        return []
+    with open(FICHIER_HISTO_RFQ, "r") as f:
+        contenu = f.read()
+        if not contenu.strip():
+            return []
+        return json.loads(contenu)
+
+
+def enregistrer_rfq_traitee(rfq, cotation, accepte):
+    historique = charger_historique_rfq()
+    ligne = {
+        "date": str(date.today()),
+        "id": rfq["id"],
+        "client": rfq.get("client", "?"),
+        "type": rfq["type"],
+        "strike": rfq["strike"],
+        "qty": rfq["qty"],
+        "sens": rfq["sens"],
+        "bid": cotation["bid"],
+        "ask": cotation["ask"],
+        "mid": cotation["mid"],
+        "accepte": accepte,
+    }
+    historique.append(ligne)
+    with open(FICHIER_HISTO_RFQ, "w") as f:
+        json.dump(historique, f, indent=2)
+
+
 def marquer_traitee(id_rfq, cotation, accepte):
     data = charger_lot()
     for rfq in data["lot"]:
@@ -45,4 +76,5 @@ def marquer_traitee(id_rfq, cotation, accepte):
             rfq["bid"] = cotation["bid"]
             rfq["ask"] = cotation["ask"]
             rfq["mid"] = cotation["mid"]
+            enregistrer_rfq_traitee(rfq, cotation, accepte)
     sauvegarder_lot(data)
