@@ -5,7 +5,7 @@ from book_store import charger_book, pnl_non_realise, fermer_position, ajouter_h
 from vol_surface import construire_surface, sauvegarder_surface, charger_surface, calculer_T, get_vol
 from quoting import coter, decision_client, executer_rfq, proba_acceptation, explication 
 from book_greeks import (delta_net_book, gamma_net_book, vega_net_book, theta_net_book,
-                         valeur_position, hedge_delta,delta_position, vega_position, multiplicateur)
+                         valeur_position, hedge_delta,delta_position, gamma_position, vega_position, multiplicateur)
 from limites import (verifier_limites, risque_apres_trade, trade_bloque, hedge_necessaire, skew_suggere, hedge_vega_necessaire,
                          pire_scenario, LIMITE_STRESS, LIMITE_DELTA, LIMITE_VEGA, grille_stress, SEUIL_HEDGE, SEUIL_HEDGE_VEGA)
 from data import get_spot_price
@@ -417,6 +417,7 @@ with onglet_book:
             "Valeur": round(valeur_position(p, surface, R, spot_actuel), 3),
             "P&L ($)": round(pnl_non_realise(p, surface, S=spot_actuel), 2),
             "Delta": round(delta_position(p, surface, R, spot_actuel) * p["qty"] * mult, 1),
+            "Gamma": round(gamma_position(p, surface, R, spot_actuel) * p["qty"] * mult, 2),
             "Vega": round(vega_position(p, surface, R, spot_actuel) * p["qty"] * mult, 1),
         })
 
@@ -430,25 +431,30 @@ with onglet_book:
             "Valeur": round(valeur_position(stocks[0], surface, R, spot_actuel), 3),
             "P&L ($)": round(sum(pnl_non_realise(s, surface, S=spot_actuel) for s in stocks), 2),
             "Delta": round(qty_stock, 1),
+            "Gamma": 0.0,
             "Vega": 0.0,
         })
 
     tot_pnl = sum(l["P&L ($)"] for l in lignes_book)
     tot_delta = sum(l["Delta"] for l in lignes_book)
+    tot_gamma = sum(l["Gamma"] for l in lignes_book)
     tot_vega = sum(l["Vega"] for l in lignes_book)
     lignes_book.append({
         "#": None, "Type": "TOTAL", "Strike": "", "Échéance": "",
         "Qté": None, "Entrée": None, "Valeur": None,
         "P&L ($)": round(tot_pnl, 2),
         "Delta": round(tot_delta, 1),
+        "Gamma": round(tot_gamma, 2),
         "Vega": round(tot_vega, 1),
     })
     df_book = pd.DataFrame(lignes_book)
+    formats_book = {"Strike": ".0f", "Qté": "+,.0f", "Entrée": ".2f", "Valeur": ".2f",
+                    "P&L ($)": "+,.0f", "Delta": "+,.0f", "Gamma": "+,.2f", "Vega": "+,.0f"}
     df_book["#"] = df_book["#"].apply(lambda x: "" if x is None or pd.isna(x) else str(x))
 
     formats_book = {"Strike": ".0f", "Qté": "+.0f", "Entrée": ".2f", "Valeur": ".2f",
                     "P&L ($)": "+,.0f", "Delta": "+,.0f", "Vega": "+,.0f"}
-    st.markdown(html_table(df_book, formats_book, colonnes_couleur=("P&L ($)",)), unsafe_allow_html=True)
+    st.markdown(html_table(df_book, formats_book, colonnes_couleur=("P&L ($)", "Gamma")), unsafe_allow_html=True)
 
     if book:
         positions_par_id = {p["id"]: p for p in book}
