@@ -1,5 +1,5 @@
 import streamlit as st
-from datetime import date
+from datetime import date, datetime
 from flow_store import obtenir_lot_du_jour, marquer_traitee
 from book_store import charger_book, pnl_non_realise, fermer_position, ajouter_hedge, regler_expirations, pnl_realise_total, charger_fermees
 from vol_surface import construire_surface, sauvegarder_surface, charger_surface, calculer_T, get_vol
@@ -19,6 +19,7 @@ from hedge_vega import hedge_vega_suggere, executer_hedge_vega
 from couts import frais_option
 import pandas as pd
 import time 
+import numbers
 
 R = 0.05
 
@@ -27,26 +28,43 @@ st.set_page_config(page_title="Options & Volatility Trading Lab", layout="wide")
 st.markdown("""
 <style>
 html { font-size: 17px; }
-.stApp { background: #080b10; }
-[data-testid="stHeader"] { background: #080b10; }
+.stApp { background: #000; }
+[data-testid="stHeader"] { display: none; }
 [data-testid="stAppDeployButton"] { display: none; }
-[data-testid="stMainBlockContainer"] { padding-top: 2.2rem; }
+[data-testid="stMainBlockContainer"] { padding-top: 0.5rem; }
 [data-testid="stColumn"], [data-testid="column"] {
-    background: #10151d; border: 1px solid #1f2733; border-radius: 4px; padding: 12px 16px;
+    background: #050505; border: 1px solid #2a2a2a; border-radius: 0; padding: 12px 16px;
 }
 [data-testid="stColumn"] [data-testid="stColumn"], [data-testid="column"] [data-testid="column"] {
     background: transparent; border: none; padding: 0;
 }
-[data-testid="stColumn"] h3, [data-testid="column"] h3, [data-testid="stVerticalBlockBorderWrapper"] h3 {
-    font-size: 13px; letter-spacing: .1em; text-transform: uppercase; color: #ffb454;
-    font-weight: 700; margin: 0 0 10px; padding: 0 0 8px; border-bottom: 1px solid #1f2733;
+[data-testid="stMainBlockContainer"] h3 {
+    font-size: 13px; letter-spacing: .1em; text-transform: uppercase; color: #ff9f1a;
+    font-weight: 700; margin: 0 0 10px; padding: 0 0 8px; border-bottom: 1px solid #2a2a2a;
 }
 [data-testid="stMetricValue"] { font-size: 1.7rem; }
 [data-testid="stMetricValue"] > div { overflow: visible; text-overflow: clip; white-space: nowrap; }
+.bar { display:flex; align-items:center; gap:14px; background:#111; border-bottom:1px solid #333; height:32px; padding:0 8px; font-size:13px; }
+.cmd { background:#ffb000; color:#000; font-weight:700; padding:3px 10px; }
+.tape { display:flex; gap:24px; background:#0a0a0a; border-bottom:1px solid #222; height:28px; align-items:center; padding:0 10px; font-size:13px; white-space:nowrap; overflow:hidden; color:#ddd; }
+.g{color:#2ee66b !important} .r{color:#ff4d4d !important} .w{color:#fff !important} .d{color:#777 !important} .a{color:#ff9f1a !important}
+.rw { display:flex; justify-content:space-between; padding:3px 0; border-bottom:1px dotted #222; font-size:14px; }
+.lim { height:7px; background:#1a1a1a; margin:2px 0 8px; } .lim i { display:block; height:7px; }
+table.t { border-collapse:collapse; width:100%; font-size:14px; }
+table.t th { color:#ff9f1a; font-weight:400; text-align:right; padding:4px 8px; border-bottom:1px solid #333; background:#0d0d0d; }
+table.t td { text-align:right; padding:3px 8px; color:#e8e8e8; border-bottom:1px solid #151515; }
+table.t th:nth-child(-n+2), table.t td:nth-child(-n+2) { text-align:left; }
+table.t tr.tot td { color:#fff; font-weight:700; border-top:1px solid #555; }
+.tk { background:#2a1c00; color:#ffcf70; padding:5px 8px; margin:8px 0 4px; font-size:13px; font-weight:700; }
+[data-testid="stButtonGroup"] button { border-radius:0 !important; min-height:26px; padding:0 12px; background:#111; border-color:#333; }
+[data-testid="stButtonGroup"] button[kind*="Active"] { background:#ff9f1a !important; color:#000 !important; }
+.stButton > button { background:#ff9f1a; color:#000; border:none; border-radius:0; font-weight:700; }
+.stButton > button:hover { background:#ffb84d; color:#000; }
+.stButton > button:disabled { background:#333; color:#777; }
+table.t th, table.t td { white-space: nowrap; }
 </style>
 """, unsafe_allow_html=True)
 
-st.title("Options & Volatility Trading Lab")
 
 lot = obtenir_lot_du_jour()
 
@@ -71,9 +89,7 @@ if "surface" not in st.session_state or not st.session_state.surface:
                        "Réessaie pendant l'ouverture de Wall Street (15h30-22h, heure de France).")
             st.stop()
 
-if st.session_state.date_calibration == "en direct":
-    st.caption("Surface de vol calibrée sur les données Yahoo (retardées).")
-else:
+if st.session_state.date_calibration != "en direct":
     st.warning(f"Marché fermé : valorisation sur les marks calibrés le {st.session_state.date_calibration}.")
 
 surface = st.session_state.surface
@@ -91,19 +107,48 @@ mk = markout_par_client(book, surface, R, spot_actuel)
 pnl_total = sum(pnl_non_realise(p, surface, S=spot_actuel) for p in book)
 pnl_realise = pnl_realise_total()
 
-def fmt_usd(x, decimales=0):
-    return f"{x:+,.{decimales}f} $".replace(",", " ")
+def couleur(x):
+    return "g" if x > 0 else "r" if x < 0 else "w"
 
-k1, k2, k3, k4, k5, k6 = st.columns(6)
-k1.metric(TICKER, f"{spot_actuel:,.2f} $")
-k2.metric("P&L non réalisé", fmt_usd(pnl_total))
-k3.metric("P&L réalisé", fmt_usd(pnl_realise))
-k4.metric("P&L total", fmt_usd(pnl_total + pnl_realise))
-k5.metric("Delta net", f"{total_delta:+,.1f} {TICKER}".replace(",", " "), 
-          help="Équivalent en actions : ton gain ou ta perte si le spot bouge de 1 $.")
-k6.metric("Vega net", f"{total_vega:+,.1f} $/vol".replace(",", " "), 
-          help="Gain ou perte en $ si la volatilité implicite monte d'un point.")
+def spark(valeurs, coul, w=70, h=16):
+    if len(valeurs) < 2:
+        return ""
+    mn, mx = min(valeurs), max(valeurs)
+    ecart = (mx - mn) or 1
+    points = " ".join(
+        f"{i * w / (len(valeurs) - 1):.1f},{h - 2 - (v - mn) / ecart * (h - 4):.1f}"
+        for i, v in enumerate(valeurs))
+    return f'<svg width="{w}" height="{h}" style="vertical-align:middle"><polyline points="{points}" fill="none" stroke="{coul}" stroke-width="1.5"/></svg>'
 
+hist = charger_historique()
+
+def serie(cle):
+    return [snap[cle] for snap in hist]
+
+def html_table(df, formats, colonnes_couleur=()):
+    def cellule(col, v):
+        if v is None or (not isinstance(v, str) and pd.isna(v)) or v == "":
+            return "<td></td>"
+        if col in formats and isinstance(v, str):
+            try:
+                v = float(v)
+            except ValueError:
+                pass
+        if col in formats and isinstance(v, numbers.Number):
+            txt = format(v, formats[col])
+        else:
+            txt = str(v)
+        cls = couleur(v) if col in colonnes_couleur and isinstance(v, numbers.Number) else ""
+        return f'<td class="{cls}">{txt}</td>'
+    entete = "".join(f"<th>{c}</th>" for c in df.columns)
+    lignes = ""
+    for _, row in df.iterrows():
+        cls_tr = ' class="tot"' if "TOTAL" in row.values else ""
+        lignes += f"<tr{cls_tr}>" + "".join(cellule(c, row[c]) for c in df.columns) + "</tr>"
+    return f'<table class="t"><tr>{entete}</tr>{lignes}</table>'
+
+
+# --- Limites (calculées AVANT le bandeau pour le voyant) ---
 limites_depassees = verifier_limites(total_delta, total_vega)
 pire_pnl = pire_scenario(total_delta, total_gamma, total_vega, total_theta, spot_actuel)[0]
 if pire_pnl < -LIMITE_STRESS:
@@ -116,18 +161,39 @@ if abs(total_vega) > SEUIL_HEDGE_VEGA:
     seuils_hedge.append(f"Vega {round(total_vega, 1)} au-dessus du seuil de hedge (±{round(SEUIL_HEDGE_VEGA)})")
 
 if limites_depassees:
-    st.error(" · ".join(limites_depassees))
+    statut = '<span class="r">● LIMITE DÉPASSÉE</span>'
 elif seuils_hedge:
-    st.warning(" · ".join(seuils_hedge))
+    statut = '<span class="a">● HEDGE À FAIRE</span>'
 else:
-    st.success("Tous les indicateurs sont dans les limites.")
+    statut = '<span class="g">● ALL LIMITS OK</span>'
+
+# --- Barre du haut + bandeau ---
+maintenant = datetime.now().strftime("%d/%m/%Y · %H:%M")
+st.markdown(f"""
+<div class="bar"><span class="cmd">{TICKER} ▸ OPTIONS DESK</span>
+<span class="w">Options &amp; Volatility Trading Lab</span>
+<span class="d" style="margin-left:auto">{maintenant}</span></div>
+<div class="tape">
+<span class="w">{TICKER}</span><span class="w">{spot_actuel:,.2f}</span>{spark(serie("spot"), "#4c8dff")}
+<span>P&amp;L NON RÉAL. <span class="{couleur(pnl_total)}">{pnl_total:+,.0f} $</span></span>
+<span>P&amp;L RÉAL. <span class="{couleur(pnl_realise)}">{pnl_realise:+,.0f} $</span></span>
+<span>P&amp;L TOTAL <span class="{couleur(pnl_total + pnl_realise)}">{pnl_total + pnl_realise:+,.0f} $</span></span>{spark(serie("pnl_total"), "#ff9f1a")}
+<span>DELTA <span class="w">{total_delta:+,.1f}</span></span>{spark(serie("delta"), "#ff9f1a")}
+<span>VEGA <span class="w">{total_vega:+,.1f} $/vol</span></span>{spark(serie("vega"), "#ff9f1a")}
+{statut}
+<span class="d">DATA: YAHOO · DELAYED</span>
+<span class="d">MODE SIMULATION · CLIENTS FICTIFS</span>
+</div>
+""", unsafe_allow_html=True)
 
 tab_desk, tab_analyse, tab_journal = st.tabs(["Desk", "Analyse", "Journal"])
 
 with tab_desk:
- onglet_risque, onglet_hedge = st.columns([1, 1], gap="small")
- onglet_flux = st.container(height=430, border=True)
- onglet_book = st.container(height=340, border=True)
+ c_flux, c_book, c_risque = st.columns([1.3, 2.3, 1.1], gap="small")
+ onglet_flux = c_flux.container(height=600, border=False)
+ onglet_book = c_book.container(height=600, border=False)
+ onglet_risque = c_risque.container(border=False)
+ onglet_hedge = c_risque.container(border=False)
 with tab_analyse:
  onglet_pnl, onglet_scenario, onglet_vol = st.columns(3, gap="small")
 with tab_journal:
@@ -137,74 +203,95 @@ with tab_journal:
 # --- Flux client ---
 with onglet_flux:
   st.subheader("Flux client du jour")
-
   st.checkbox("Mode formation : voir le modèle d'acceptation", key="mode_formation")
+  formation = st.session_state.get("mode_formation", False)
 
   if "message_rfq" in st.session_state:
     ok, msg = st.session_state.pop("message_rfq")
     (st.success if ok else st.warning)(msg)
 
-    
-
-  for rfq in lot:
-    st.write(f"**{rfq['type']} strike {rfq['strike']}** — {rfq['sens']} — qty {rfq['qty']} — échéance {rfq['maturite']}")
-
-    if rfq.get("traitee"):
-        statut = "✅ ACCEPTÉ" if rfq["accepte"] else "❌ REFUSÉ"
-        st.write(f"Bid: {round(rfq['bid'], 3)} / Ask: {round(rfq['ask'], 3)} — {statut}")
-        cotation_r = {"mid": rfq.get("mid", (rfq["bid"] + rfq["ask"]) / 2), "bid": rfq["bid"], "ask": rfq["ask"]}
-        st.caption(explication(rfq, cotation_r, rfq["accepte"], detail=st.session_state.get("mode_formation", False)))
+  # 1) Blotter : une ligne par RFQ
+  lignes_rfq = []
+  court = {"Asset manager": "AM", "Corporate": "CORP", "Hedge fund": "HF", "Fonds de vol": "VOL"}
+  for r in lot:
+    if r.get("traitee"):
+      statut = '<span class="g">ACCEPTÉ</span>' if r["accepte"] else '<span class="r">REFUSÉ</span>'
     else:
-        base = spread_base(rfq.get("client"))
-        suggere = spread_suggere(rfq.get("client"), mk, base)
-        spread_defaut = round(suggere * 100 * 2) / 2   # pas de 0,5 comme le slider
-        delta_apres, vega_apres = risque_apres_trade(rfq, surface, spot_actuel, total_delta, total_vega, r=R)
-        skew_defaut = round(skew_suggere(rfq, total_delta, total_vega, delta_apres, vega_apres) * 100 * 2) / 2
-        st.caption(f"Client : {rfq.get('client', '?')} | spread suggéré : {round(suggere * 100, 1)} % | skew suggéré : {skew_defaut} %")
-        spread = st.slider(f"Spread #{rfq['id']} (%)", 1.0, 15.0, spread_defaut, step=0.5,
-                           key=f"spread_{rfq['id']}") / 100
-        skew = st.slider(f"Skew #{rfq['id']} (%)", -5.0, 5.0, skew_defaut, step=0.5,
-                         key=f"skew_{rfq['id']}") / 100
+      statut = '<span class="a">À COTER</span>'
+    sens = '<span class="g">ACHAT</span>' if r["sens"] == "achat" else '<span class="r">VENTE</span>'
+    lignes_rfq.append({"#": r["id"], "Client": court.get(r.get("client"), r.get("client", "?")),
+                       "Type": r["type"].upper(), "K": r["strike"], "Qté": r["qty"],
+                       "Sens": sens, "Statut": statut})
+  st.markdown(html_table(pd.DataFrame(lignes_rfq), {"K": ".0f"}), unsafe_allow_html=True)
 
-        apercu = coter(rfq, surface, spread=spread, skew=skew)
-        st.caption(f"Mid {round(apercu['mid'], 3)} | Bid {round(apercu['bid'], 3)} | Ask {round(apercu['ask'], 3)}")
+  # 2) Choix de la RFQ
+  ids = [r["id"] for r in lot]
+  a_coter = [r["id"] for r in lot if not r.get("traitee")]
+  defaut = a_coter[0] if a_coter else ids[0]
+  if st.session_state.get("rfq_choisie") not in ids:
+    st.session_state.pop("rfq_choisie", None)
+  choix = st.segmented_control("RFQ", ids, default=defaut, format_func=lambda i: f"#{i}",
+                               key="rfq_choisie", label_visibility="collapsed")
+  if choix is None:
+    choix = defaut
+  rfq = next(r for r in lot if r["id"] == choix)
 
-        if rfq["sens"] == "achat":
-            edge = (apercu["ask"] - apercu["mid"]) * rfq["qty"] * MULTIPLICATEUR_OPTION
-        else:
-            edge = (apercu["mid"] - apercu["bid"]) * rfq["qty"] * MULTIPLICATEUR_OPTION
-        if edge < 0:
-            st.error(f"Edge attendu si accepté : {round(edge, 2)} $ : tu cèdes du spread au client.")
-        else:
-            st.caption(f"Edge attendu si accepté : +{round(edge, 2)} $ (frais : {round(frais_option(rfq['qty']), 2)} $)")
+  # 3) Ticket de la RFQ choisie
+  st.markdown(f'<div class="tk">TICKET #{rfq["id"]} · {rfq["type"].upper()} {rfq["strike"]} · {rfq["maturite"]} · '
+              f'client {rfq["sens"]} ×{rfq["qty"]} · {rfq.get("client", "?")}</div>', unsafe_allow_html=True)
 
-        # Contrôle pré-trade : que devient mon risque si le client accepte ?
-       
-        bloquees = trade_bloque(total_delta, total_vega, delta_apres, vega_apres)
-        for m in bloquees:
-            st.error(f"Trade bloqué : {m}")
-        st.table([
-            {"Mesure": "Delta", "Avant": round(total_delta, 1), "Après": round(delta_apres, 1), "Limite": f"±{round(LIMITE_DELTA)}"},
-            {"Mesure": "Vega", "Avant": round(total_vega, 1), "Après": round(vega_apres, 1), "Limite": f"±{round(LIMITE_VEGA)}"},
-        ])
+  if rfq.get("traitee"):
+    statut = "✅ ACCEPTÉ" if rfq["accepte"] else "❌ REFUSÉ"
+    st.write(f"Bid {rfq['bid']:.3f} / Ask {rfq['ask']:.3f} — {statut}")
+    cotation_r = {"mid": rfq.get("mid", (rfq["bid"] + rfq["ask"]) / 2), "bid": rfq["bid"], "ask": rfq["ask"]}
+    st.caption(explication(rfq, cotation_r, rfq["accepte"], detail=formation))
+  else:
+    base = spread_base(rfq.get("client"))
+    suggere = spread_suggere(rfq.get("client"), mk, base)
+    spread_defaut = round(suggere * 100 * 2) / 2   # pas de 0,5 comme le slider
+    delta_apres, vega_apres = risque_apres_trade(rfq, surface, spot_actuel, total_delta, total_vega, r=R)
+    skew_defaut = round(skew_suggere(rfq, total_delta, total_vega, delta_apres, vega_apres) * 100 * 2) / 2
+    st.caption(f"Spread suggéré : {suggere * 100:.1f} % · skew suggéré : {skew_defaut} %")
 
-        if st.session_state.get("mode_formation", False):
-            cotation_prev = coter(rfq, surface, spread=spread, skew=skew)
-            proba, ecart, seuil = proba_acceptation(rfq, cotation_prev)
-            st.caption(f"[Mode formation] Acceptation estimée : {round(proba * 100)} % · écart {round(ecart * 100, 1)} % vs seuil {round(seuil * 100, 1)} %")
+    s1, s2 = st.columns(2)
+    spread = s1.slider("Spread %", 1.0, 15.0, spread_defaut, step=0.5, key=f"spread_{rfq['id']}") / 100
+    skew = s2.slider("Skew %", -5.0, 5.0, skew_defaut, step=0.5, key=f"skew_{rfq['id']}") / 100
 
-        if st.button(f"Coter #{rfq['id']}", disabled=bool(bloquees)):
-            with st.spinner("Le client réfléchit…"):
-                time.sleep(1.5)
-            cotation = coter(rfq, surface, spread=spread, skew=skew)
-            accepte = decision_client(rfq, cotation)
-            if accepte:
-                executer_rfq(rfq, cotation, spot=spot_actuel)
-            marquer_traitee(rfq["id"], cotation, accepte)
-            st.session_state["message_rfq"] = (accepte, explication(rfq, cotation, accepte, detail=st.session_state.get("mode_formation", False)))
-            st.rerun()
+    apercu = coter(rfq, surface, spread=spread, skew=skew)
+    if rfq["sens"] == "achat":
+      edge = (apercu["ask"] - apercu["mid"]) * rfq["qty"] * MULTIPLICATEUR_OPTION
+    else:
+      edge = (apercu["mid"] - apercu["bid"]) * rfq["qty"] * MULTIPLICATEUR_OPTION
+    bloquees = trade_bloque(total_delta, total_vega, delta_apres, vega_apres)
+    cls_d = "r" if abs(delta_apres) > LIMITE_DELTA else "w"
+    cls_v = "r" if abs(vega_apres) > LIMITE_VEGA else "w"
 
-    st.divider()
+    st.markdown(
+      f'<div class="rw"><span class="d">MID / BID / ASK</span><span class="w">{apercu["mid"]:.3f} / {apercu["bid"]:.3f} / {apercu["ask"]:.3f}</span></div>'
+      f'<div class="rw"><span class="d">EDGE SI ACCEPTÉ</span><span class="{couleur(edge)}">{edge:+,.2f} $</span></div>'
+      f'<div class="rw"><span class="d">FRAIS</span><span class="w">{frais_option(rfq["qty"]):.2f} $</span></div>'
+      f'<div class="rw"><span class="d">DELTA AVANT → APRÈS</span><span class="{cls_d}">{total_delta:+,.1f} → {delta_apres:+,.1f} (±{LIMITE_DELTA:.0f})</span></div>'
+      f'<div class="rw"><span class="d">VEGA AVANT → APRÈS</span><span class="{cls_v}">{total_vega:+,.1f} → {vega_apres:+,.1f} (±{LIMITE_VEGA:.0f})</span></div>',
+      unsafe_allow_html=True)
+
+    if edge < 0:
+      st.error("Edge négatif : tu cèdes du spread au client.")
+    for m in bloquees:
+      st.error(f"Trade bloqué : {m}")
+    if formation:
+      proba, ecart, seuil = proba_acceptation(rfq, apercu)
+      st.caption(f"[Mode formation] Acceptation estimée : {round(proba * 100)} % · écart {round(ecart * 100, 1)} % vs seuil {round(seuil * 100, 1)} %")
+
+    if st.button(f"QUOTE #{rfq['id']}", disabled=bool(bloquees)):
+      with st.spinner("Le client réfléchit…"):
+        time.sleep(1.5)
+      cotation = coter(rfq, surface, spread=spread, skew=skew)
+      accepte = decision_client(rfq, cotation)
+      if accepte:
+        executer_rfq(rfq, cotation, spot=spot_actuel)
+      marquer_traitee(rfq["id"], cotation, accepte)
+      st.session_state["message_rfq"] = (accepte, explication(rfq, cotation, accepte, detail=formation))
+      st.rerun()
 
 def couleur_pnl(v):
     if v is None or pd.isna(v):
@@ -284,19 +371,9 @@ with onglet_book:
     df_book = pd.DataFrame(lignes_book)
     df_book["#"] = df_book["#"].apply(lambda x: "" if x is None or pd.isna(x) else str(x))
 
-    def f_num(fmt):
-      def f(x):
-        try:
-          return "" if (x is None or x == "" or pd.isna(x)) else format(x, fmt)
-        except (ValueError, TypeError):
-          return str(x)
-      return f
-
-    st.dataframe(
-      df_book.style.map(couleur_pnl, subset=["P&L ($)"]).format({
-        "Strike": f_num(".0f"), "Qté": f_num("+.0f"), "Entrée": f_num(".2f"), "Valeur": f_num(".2f"),
-        "P&L ($)": f_num("+,.0f"), "Delta": f_num("+,.0f"), "Vega": f_num("+,.0f")}),
-      hide_index=True)
+    formats_book = {"Strike": ".0f", "Qté": "+.0f", "Entrée": ".2f", "Valeur": ".2f",
+                    "P&L ($)": "+,.0f", "Delta": "+,.0f", "Vega": "+,.0f"}
+    st.markdown(html_table(df_book, formats_book, colonnes_couleur=("P&L ($)",)), unsafe_allow_html=True)
 
     if book:
         positions_par_id = {p["id"]: p for p in book}
@@ -310,58 +387,71 @@ with onglet_book:
     else:
         st.caption("Book vide.")
 
-# --- Greeks ---
+# --- Greeks + limites ---
 with onglet_risque:
  st.subheader("Greeks du book")
 
- col1, col2 = st.columns(2)
- col3, col4 = st.columns(2)
- col1.metric("Delta net", f"{total_delta:+,.1f} {TICKER}".replace(",", " "),
-             help="Équivalent en actions : ton gain ou ta perte si le spot bouge de 1 $.")
- col2.metric("Gamma net", f"{total_gamma:+,.2f} {TICKER}/$".replace(",", " "),
-             help="De combien ton delta (en actions) change quand le spot bouge de 1 $.")
- col3.metric("Vega net", f"{total_vega:+,.1f} $/vol".replace(",", " "),
-             help="Gain ou perte en $ si la volatilité implicite monte d'un point.")
- col4.metric("Theta net", f"{total_theta:+,.1f} $/jour".replace(",", " "),
-             help="Ce que le temps qui passe te rapporte ou te coûte par jour, en $.")
+ def ligne(label, valeur, pct=None, cls="w"):
+     barre = ""
+     if pct is not None:
+         coul = "#2ee66b" if pct < 60 else "#ff9f1a" if pct < 100 else "#ff4d4d"
+         barre = f'<div class="lim"><i style="width:{max(min(pct, 100), 1):.0f}%;background:{coul}"></i></div>'
+     return f'<div class="rw"><span class="a">{label}</span><span class="{cls}">{valeur}</span></div>{barre}'
 
-for a in verifier_limites(total_delta, total_vega):
-    st.error(f"Limite dépassée : {a}")
-    pire_pnl, pire_spot, pire_vol = pire_scenario(total_delta, total_gamma, total_vega, total_theta, spot_actuel)
-    texte_pire = f"Pire scénario de stress : {round(pire_pnl)} $ (SPY {pire_spot * 100:+.0f} %, vol {pire_vol:+.0f} pts)"
-    if pire_pnl < -LIMITE_STRESS:
-        st.error(f"Limite de stress dépassée : {texte_pire} (limite : -{round(LIMITE_STRESS)} $)")
-    else:
-        st.caption(f"{texte_pire} | limite : -{round(LIMITE_STRESS)} $")
+ pire_pnl, pire_spot, pire_vol = pire_scenario(total_delta, total_gamma, total_vega, total_theta, spot_actuel)
+
+ html = (
+     ligne("DELTA", f"{total_delta:+,.1f} {TICKER}", abs(total_delta) / LIMITE_DELTA * 100)
+     + ligne("GAMMA", f"{total_gamma:+,.2f} {TICKER}/$")
+     + ligne("VEGA", f"{total_vega:+,.1f} $/vol", abs(total_vega) / LIMITE_VEGA * 100)
+     + ligne("THETA", f"{total_theta:+,.1f} $/jour", cls=couleur(total_theta))
+     + ligne("PIRE STRESS", f"{pire_pnl:+,.0f} / {LIMITE_STRESS:,.0f} $",
+             abs(min(pire_pnl, 0)) / LIMITE_STRESS * 100, cls=couleur(pire_pnl))
+ )
+ st.markdown(html, unsafe_allow_html=True)
+ st.caption(f"Pire scénario : SPY {pire_spot * 100:+.0f} %, vol {pire_vol:+.0f} pts")
+
+ for msg in limites_depassees:
+     st.error(msg)
 
 with onglet_hedge:
- st.subheader("Hedge du vega")
+ st.subheader("Hedge")
+
+ # --- Hedge du vega ---
  hedge_v = hedge_vega_suggere(total_vega, surface, spot_actuel, R)
  if hedge_v is None:
-    st.caption("Aucune option de référence disponible pour hedger le vega.")
+    st.caption("VEGA : aucune option de référence disponible pour hedger.")
  else:
-    st.write(f"Hedge suggéré : {hedge_v['qty']:+d} contrats de {hedge_v['type']} "
-             f"strike {hedge_v['strike']} échéance {hedge_v['maturite']} "
-             f"(vega par contrat : {round(hedge_v['vega_contrat'], 1)} $)")
     if hedge_vega_necessaire(total_vega):
-        st.warning("Vega au-dessus du seuil : un hedge est justifié.")
+        etat_v = f'<span class="a">AU-DESSUS DU SEUIL (±{SEUIL_HEDGE_VEGA:.0f})</span>'
     else:
-        st.success("Vega sous le seuil : pas de hedge nécessaire.")
-    qty_vega = st.number_input("Contrats à exécuter", value=int(hedge_v["qty"]), step=1,
-                               key=f"qty_hedge_vega_{hedge_v['qty']}")
-    if st.button("Hedger le vega", disabled=(qty_vega == 0)):
+        etat_v = f'<span class="g">sous le seuil (±{SEUIL_HEDGE_VEGA:.0f})</span>'
+    st.markdown(
+        f'<div class="rw"><span class="a">VEGA</span>{etat_v}</div>'
+        f'<div class="d" style="font-size:12px;margin:3px 0 6px">Suggéré : {hedge_v["qty"]:+d} {hedge_v["type"]} '
+        f'{hedge_v["strike"]} · {hedge_v["maturite"]} · vega/contrat {hedge_v["vega_contrat"]:.1f} $</div>',
+        unsafe_allow_html=True)
+    cv1, cv2 = st.columns(2)
+    qty_vega = cv1.number_input("Contrats", value=int(hedge_v["qty"]), step=1,
+                                key=f"qty_hedge_vega_{hedge_v['qty']}", label_visibility="collapsed")
+    if cv2.button("HEDGE VEGA", disabled=(qty_vega == 0)):
         executer_hedge_vega({**hedge_v, "qty": int(qty_vega)}, surface, R, spot_actuel)
         st.rerun()
- st.subheader("Hedge du delta")
+
+ # --- Hedge du delta ---
  hedge_qty = hedge_delta(total_delta)
- st.write(f"Hedge suggéré : {round(hedge_qty, 1)} actions {TICKER}")
  if hedge_necessaire(total_delta):
-    st.warning("Delta au-dessus du seuil : un hedge est justifié.")
+    etat_d = f'<span class="a">AU-DESSUS DU SEUIL (±{SEUIL_HEDGE})</span>'
  else:
-    st.success("Delta sous le seuil : pas de hedge nécessaire (tu évites les frais).")
- qty_delta = st.number_input("Actions à exécuter", value=int(round(hedge_qty)), step=10,
-                            key=f"qty_hedge_delta_{round(hedge_qty)}")
- if st.button("Hedger le delta", disabled=(qty_delta == 0)):
+    etat_d = f'<span class="g">sous le seuil (±{SEUIL_HEDGE})</span>'
+ st.markdown(
+    f'<div class="rw" style="margin-top:10px"><span class="a">DELTA</span>{etat_d}</div>'
+    f'<div class="d" style="font-size:12px;margin:3px 0 6px">Suggéré : {hedge_qty:+.1f} actions {TICKER}</div>',
+    unsafe_allow_html=True)
+ cd1, cd2 = st.columns(2)
+ qty_delta = cd1.number_input("Actions", value=int(round(hedge_qty)), step=10,
+                              key=f"qty_hedge_delta_{round(hedge_qty)}", label_visibility="collapsed")
+ if cd2.button("HEDGE DELTA", disabled=(qty_delta == 0)):
     ajouter_hedge(qty=int(qty_delta), prix=spot_actuel, date_entree=str(date.today()))
     st.rerun()
 
