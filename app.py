@@ -185,21 +185,33 @@ def heatmap_html(df, limite):
         lignes += f'<tr><td class="d">{idx}</td>{cases}</tr>'
     return f'<table class="t">{entete}{lignes}</table>'
 
-def courbe_html(valeurs, etiquettes, coul="#ff9f1a", w=520, h=150):
+def courbe_html(valeurs, etiquettes, coul="#ff9f1a", w=520, h=170):
     if len(valeurs) < 2:
         return ""
+    g, d, haut, bas = 52, 10, 10, 22          # marges : gauche, droite, haut, bas
     mn, mx = min(valeurs + [0]), max(valeurs + [0])
     ecart = (mx - mn) or 1
-    xs = [5 + i * (w - 10) / (len(valeurs) - 1) for i in range(len(valeurs))]
-    ys = [h - 20 - (v - mn) / ecart * (h - 30) for v in valeurs]
-    pts = " ".join(f"{x:.1f},{y:.1f}" for x, y in zip(xs, ys))
-    y0 = h - 20 - (0 - mn) / ecart * (h - 30)
-    labels = "".join(f'<text x="{x:.0f}" y="{h - 4}" fill="#777" font-size="10" text-anchor="middle">{e[5:]}</text>'
-                     for x, e in zip(xs, etiquettes))
-    return (f'<svg viewBox="0 0 {w} {h}" width="100%" height="{h}">'
-            f'<line x1="0" y1="{y0:.1f}" x2="{w}" y2="{y0:.1f}" stroke="#333" stroke-dasharray="3,3"/>'
-            f'<polyline points="{pts}" fill="none" stroke="{coul}" stroke-width="2"/>{labels}'
-            f'<text x="{w - 5}" y="{ys[-1] - 6:.0f}" fill="#fff" font-size="11" text-anchor="end">{valeurs[-1]:+,.0f} $</text></svg>')
+
+    def x(i):
+        return g + i * (w - g - d) / (len(valeurs) - 1)
+
+    def y(v):
+        return haut + (mx - v) / ecart * (h - haut - bas)
+
+    svg = ""
+    for k in range(5):                        # 5 niveaux horizontaux
+        niv = mn + k * ecart / 4
+        svg += (f'<line x1="{g}" y1="{y(niv):.1f}" x2="{w - d}" y2="{y(niv):.1f}" stroke="#222"/>'
+                f'<text x="{g - 6}" y="{y(niv) + 3:.1f}" fill="#777" font-size="10" text-anchor="end">{niv:,.0f}</text>')
+    svg += f'<line x1="{g}" y1="{y(0):.1f}" x2="{w - d}" y2="{y(0):.1f}" stroke="#555" stroke-dasharray="3,3"/>'
+    pts = " ".join(f"{x(i):.1f},{y(v):.1f}" for i, v in enumerate(valeurs))
+    svg += f'<polyline points="{pts}" fill="none" stroke="{coul}" stroke-width="2"/>'
+    for i, (v, e) in enumerate(zip(valeurs, etiquettes)):
+        svg += (f'<circle cx="{x(i):.1f}" cy="{y(v):.1f}" r="3" fill="{coul}"/>'
+                f'<text x="{x(i):.1f}" y="{h - 6}" fill="#777" font-size="10" text-anchor="middle">{e[5:]}</text>')
+    svg += (f'<text x="{x(len(valeurs) - 1):.1f}" y="{y(valeurs[-1]) - 8:.1f}" fill="#fff" '
+            f'font-size="11" text-anchor="end">{valeurs[-1]:+,.0f} $</text>')
+    return f'<svg viewBox="0 0 {w} {h}" width="100%" height="{h}">{svg}</svg>'
 
 def couleur_vol(v, lo=10, hi=30):
     t = max(0, min(1, (v - lo) / (hi - lo)))
