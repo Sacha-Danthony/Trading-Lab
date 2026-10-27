@@ -47,7 +47,7 @@ def charger_historique_rfq():
         return json.loads(contenu)
 
 
-def enregistrer_rfq_traitee(rfq, cotation, accepte):
+def enregistrer_rfq_traitee(rfq, cotation, accepte, passe=False):
     historique = charger_historique_rfq()
     ligne = {
         "date": str(date.today()),
@@ -61,32 +61,38 @@ def enregistrer_rfq_traitee(rfq, cotation, accepte):
         "ask": cotation["ask"],
         "mid": cotation["mid"],
         "accepte": accepte,
+        "passe": passe,
     }
     historique.append(ligne)
     with open(FICHIER_HISTO_RFQ, "w") as f:
         json.dump(historique, f, indent=2)
 
+
 def stats_rfq(historique):
     stats = {}
     for ligne in historique:
+        if ligne.get("passe"):
+            continue
         client = ligne["client"]
         if client not in stats:
             stats[client] = {"n": 0, "acceptees": 0, "spread_total": 0.0}
-        stats[client]["n"] += 1                         
+        stats[client]["n"] += 1
         if ligne["accepte"]:
-            stats[client]["acceptees"] += 1              
-        spread = (ligne["ask"] - ligne["bid"]) / ligne["mid"]      
-        stats[client]["spread_total"] += spread             
+            stats[client]["acceptees"] += 1
+        spread = (ligne["ask"] - ligne["bid"]) / ligne["mid"]
+        stats[client]["spread_total"] += spread
     return stats
 
-def marquer_traitee(id_rfq, cotation, accepte):
+
+def marquer_traitee(id_rfq, cotation, accepte, passe=False):
     data = charger_lot()
     for rfq in data["lot"]:
         if rfq["id"] == id_rfq:
             rfq["traitee"] = True
             rfq["accepte"] = accepte
+            rfq["passe"] = passe
             rfq["bid"] = cotation["bid"]
             rfq["ask"] = cotation["ask"]
             rfq["mid"] = cotation["mid"]
-            enregistrer_rfq_traitee(rfq, cotation, accepte)
+            enregistrer_rfq_traitee(rfq, cotation, accepte, passe)
     sauvegarder_lot(data)

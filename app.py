@@ -231,7 +231,7 @@ df_stress = pd.DataFrame(grille_stress(total_delta, total_gamma, total_vega, tot
 pire_pnl = df_stress.min().min()
 pire_vol_lbl, pire_spot_lbl = df_stress.stack().idxmin()
 if pire_pnl < -LIMITE_STRESS:
-    limites_depassees.append(f"Stress {round(pire_pnl):,} $ au-delà de la limite (−{round(LIMITE_STRESS):,} $)")
+    limites_depassees.append(f"Stress {round(pire_pnl):,} \\$ au-delà de la limite (−{round(LIMITE_STRESS):,} \\$)")
 
 seuils_hedge = []
 if abs(total_delta) > SEUIL_HEDGE:
@@ -280,8 +280,8 @@ tab_desk, tab_analyse, tab_journal = st.tabs(["Desk", "Analyse", "Journal"])
 
 with tab_desk:
  c_flux, c_book, c_risque = st.columns([1.3, 2.3, 1.1], gap="small")
- onglet_flux = c_flux.container(height=600, border=False)
- onglet_book = c_book.container(height=600, border=False)
+ onglet_flux = c_flux.container(border=False)
+ onglet_book = c_book.container(border=False)
  onglet_risque = c_risque.container(border=False)
  onglet_hedge = c_risque.container(border=False)
 with tab_analyse:
@@ -306,7 +306,10 @@ with onglet_flux:
   court = {"Asset manager": "AM", "Corporate": "CORP", "Hedge fund": "HF", "Fonds de vol": "VOL"}
   for r in lot:
     if r.get("traitee"):
-      statut = '<span class="g">ACCEPTÉ</span>' if r["accepte"] else '<span class="r">REFUSÉ</span>'
+      if r.get("passe"):
+        statut = '<span class="d">PASSÉ</span>'
+      else:
+        statut = '<span class="g">ACCEPTÉ</span>' if r["accepte"] else '<span class="r">REFUSÉ</span>'
     else:
       statut = '<span class="a">À COTER</span>'
     sens = '<span class="g">ACHAT</span>' if r["sens"] == "achat" else '<span class="r">VENTE</span>'
@@ -332,10 +335,14 @@ with onglet_flux:
               f'client {rfq["sens"]} ×{rfq["qty"]} · {rfq.get("client", "?")}</div>', unsafe_allow_html=True)
 
   if rfq.get("traitee"):
-    statut = "✅ ACCEPTÉ" if rfq["accepte"] else "❌ REFUSÉ"
-    st.write(f"Bid {rfq['bid']:.3f} / Ask {rfq['ask']:.3f} — {statut}")
-    cotation_r = {"mid": rfq.get("mid", (rfq["bid"] + rfq["ask"]) / 2), "bid": rfq["bid"], "ask": rfq["ask"]}
-    st.caption(explication(rfq, cotation_r, rfq["accepte"], detail=formation))
+    if rfq.get("passe"):
+      st.write("⏸ PASSÉE : aucune cotation envoyée au client (décision du desk).")
+      st.caption(f"Prix non envoyé (au moment de la décision) : bid {rfq['bid']:.3f} / ask {rfq['ask']:.3f}")
+    else:
+      statut = "✅ ACCEPTÉ" if rfq["accepte"] else "❌ REFUSÉ"
+      st.write(f"Bid {rfq['bid']:.3f} / Ask {rfq['ask']:.3f} — {statut}")
+      cotation_r = {"mid": rfq.get("mid", (rfq["bid"] + rfq["ask"]) / 2), "bid": rfq["bid"], "ask": rfq["ask"]}
+      st.caption(explication(rfq, cotation_r, rfq["accepte"], detail=formation))
   else:
     base = spread_base(rfq.get("client"))
     suggere = spread_suggere(rfq.get("client"), mk, base)
@@ -373,7 +380,8 @@ with onglet_flux:
       proba, ecart, seuil = proba_acceptation(rfq, apercu)
       st.caption(f"[Mode formation] Acceptation estimée : {round(proba * 100)} % · écart {round(ecart * 100, 1)} % vs seuil {round(seuil * 100, 1)} %")
 
-    if st.button(f"QUOTE #{rfq['id']}", disabled=bool(bloquees)):
+    b1, b2 = st.columns(2)
+    if b1.button(f"QUOTE #{rfq['id']}", disabled=bool(bloquees)):
       with st.spinner("Le client réfléchit…"):
         time.sleep(1.5)
       cotation = coter(rfq, surface, spread=spread, skew=skew)
@@ -382,6 +390,10 @@ with onglet_flux:
         executer_rfq(rfq, cotation, spot=spot_actuel)
       marquer_traitee(rfq["id"], cotation, accepte)
       st.session_state["message_rfq"] = (accepte, explication(rfq, cotation, accepte, detail=formation))
+      st.rerun()
+    if b2.button(f"PASSER #{rfq['id']}"):
+      marquer_traitee(rfq["id"], apercu, False, passe=True)
+      st.session_state["message_rfq"] = (False, f"RFQ #{rfq['id']} passée : pas de cotation envoyée au client.")
       st.rerun()
 
     
