@@ -75,6 +75,18 @@ def valeur_position(position, surface, r, S):
         v = S
     return v
 
+def valeur_modele(position, surface, r, S, choc_vol=0, jours=0):
+    """Valeur Black-Scholes uniquement (sans prix de marché), avec une vol décalée de choc_vol points
+    et une échéance raccourcie de `jours` jours."""
+    if position["type"] == "stock":
+        return S
+    T = max(calculer_T(position["maturite"]) - jours / 365, 0.5 / 365)
+    sigma = get_vol(K=position["strike"], T=T, surface=surface) + choc_vol / 100
+    sigma = max(sigma, 0.01)   # une vol ne peut pas être négative
+    if position["type"] == "call":
+        return prix_call(S=S, K=position["strike"], T=T, r=r, sigma=sigma)
+    return prix_put(S=S, K=position["strike"], T=T, r=r, sigma=sigma)
+
 
 def delta_net_book(book, surface, r, S):
     total = 0

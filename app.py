@@ -5,9 +5,9 @@ from book_store import charger_book, pnl_non_realise, fermer_position, ajouter_h
 from vol_surface import construire_surface, sauvegarder_surface, charger_surface, calculer_T, get_vol
 from quoting import coter, decision_client, executer_rfq, proba_acceptation, explication 
 from book_greeks import (delta_net_book, gamma_net_book, vega_net_book, theta_net_book,
-                         valeur_position, hedge_delta,delta_position, gamma_position, vega_position, multiplicateur)
+                         valeur_position, hedge_delta,delta_position, gamma_position, vega_position, valeur_modele, multiplicateur)
 from limites import (verifier_limites, risque_apres_trade, trade_bloque, hedge_necessaire, skew_suggere, hedge_vega_necessaire,
-                         LIMITE_STRESS, LIMITE_DELTA, LIMITE_VEGA, grille_stress, SEUIL_HEDGE, SEUIL_HEDGE_VEGA)
+                         LIMITE_STRESS, LIMITE_DELTA, LIMITE_VEGA, grille_stress_complete, SEUIL_HEDGE, SEUIL_HEDGE_VEGA)
 from data import get_spot_price, get_historique_spot,PERIODES
 from markout import markout_par_client, spread_suggere
 from pnl import pnl_explain
@@ -227,7 +227,8 @@ def couleur_vol(v, lo=10, hi=30):
 
 # --- Limites (calculées AVANT le bandeau pour le voyant) ---
 limites_depassees = verifier_limites(total_delta, total_vega)
-df_stress = pd.DataFrame(grille_stress(total_delta, total_gamma, total_vega, total_theta, spot_actuel)).T
+df_stress = pd.DataFrame(grille_stress_complete(book, surface, spot_actuel, R)).T
+
 pire_pnl = df_stress.min().min()
 pire_vol_lbl, pire_spot_lbl = df_stress.stack().idxmin()
 if pire_pnl < -LIMITE_STRESS:
@@ -537,7 +538,7 @@ with onglet_hedge:
 with onglet_scenario:
     st.subheader("Stress test · P&L du book ($)")
     st.markdown(heatmap_html(df_stress, LIMITE_STRESS), unsafe_allow_html=True)
-    st.caption(f"Plus la case est foncée, plus la perte approche la limite ({LIMITE_STRESS:,.0f} $).")
+    st.caption(f"Revalorisation complète de chaque option. Plus la case est foncée, plus la perte approche la limite ({LIMITE_STRESS:,.0f} $).")
 
     st.subheader("Scénario : et si le marché bouge ?")
     s1, s2, s3 = st.columns(3)
@@ -545,14 +546,25 @@ with onglet_scenario:
     dvol = s2.slider("Vol (pts)", -5.0, 5.0, 0.0, step=0.5)
     dt = s3.slider("Jours", 0, 10, 1)
 
+    # Approximation par les grecques : utile pour voir d'où vient le P&L
     p_delta, p_gamma, p_vega, p_theta, p_total = pnl_explain(
         total_delta, total_gamma, total_vega, total_theta, dS, dvol, dt)
+
+    # Revalorisation complète : chaque option est repricée dans le scénario
+    valeur_base = sum(valeur_modele(p, surface, R, spot_actuel) * p["qty"] * multiplicateur(p) for p in book)
+    valeur_scen = sum(valeur_modele(p, surface, R, spot_actuel + dS, choc_vol=dvol, jours=dt) * p["qty"] * multiplicateur(p) for p in book)
+    p_reval = valeur_scen - valeur_base
+
     lignes_scen = "".join(
         f'<div class="rw"><span class="a">{nom}</span><span class="{couleur(round(v))}">{signe(v)} $</span></div>'
         for nom, v in [("DELTA", p_delta), ("GAMMA", p_gamma), ("VEGA", p_vega), ("THETA", p_theta)])
-    lignes_scen += (f'<div class="rw" style="font-weight:700"><span class="w">TOTAL</span>'
+    lignes_scen += (f'<div class="rw"><span class="d">TOTAL (APPROX. GRECQUES)</span>'
                     f'<span class="{couleur(round(p_total))}">{signe(p_total)} $</span></div>')
+    lignes_scen += (f'<div class="rw" style="font-weight:700"><span class="w">TOTAL (REVALORISATION)</span>'
+                    f'<span class="{couleur(round(p_reval))}">{signe(p_reval)} $</span></div>')
     st.markdown(lignes_scen, unsafe_allow_html=True)
+    st.caption("Le détail par grecque est une approximation ; le total en revalorisation est le chiffre de référence. "
+               "L'écart entre les deux vient des effets que les grecques ne captent pas (gamma qui change, vanna, volga).")
 
 
 # --- Cours du SPY ---

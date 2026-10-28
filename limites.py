@@ -1,4 +1,4 @@
-from book_greeks import delta_position, vega_position
+from book_greeks import delta_position, vega_position, valeur_modele, multiplicateur
 from config import MULTIPLICATEUR_OPTION
 from pnl import pnl_explain
 
@@ -89,5 +89,19 @@ def grille_stress(total_delta, total_gamma, total_vega, total_theta, spot,
             pnl = pnl_explain(total_delta, total_gamma, total_vega, total_theta,
                               choc_spot * spot, choc_vol, 0)[4]
             ligne[f"{choc_spot:+.0%}"] = pnl
+        grille[f"vol {choc_vol:+d} pts"] = ligne
+    return grille
+
+def grille_stress_complete(book, surface, spot, r,
+                           chocs_spot=(-0.10, -0.05, 0.0, 0.05, 0.10), chocs_vol=(-5, 0, 5, 15)):
+    """P&L du book par revalorisation complète : chaque option est repricée avec le spot et la vol choqués."""
+    valeur_actuelle = sum(valeur_modele(p, surface, r, spot) * p["qty"] * multiplicateur(p) for p in book)
+    grille = {}
+    for choc_vol in chocs_vol:
+        ligne = {}
+        for choc_spot in chocs_spot:
+            spot_choque = spot * (1 + choc_spot)
+            valeur_choquee = sum(valeur_modele(p, surface, r, spot_choque, choc_vol=choc_vol) * p["qty"] * multiplicateur(p) for p in book)
+            ligne[f"{choc_spot:+.0%}"] = valeur_choquee - valeur_actuelle
         grille[f"vol {choc_vol:+d} pts"] = ligne
     return grille
