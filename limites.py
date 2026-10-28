@@ -10,14 +10,19 @@ MOUVEMENT_VOL = 5.0          # choc de vol de référence, en points de vol
 
 LIMITE_DELTA = BUDGET_PERTE_JOUR / MOUVEMENT_SPOT   # nombre d'actions équivalentes max
 LIMITE_VEGA = BUDGET_PERTE_JOUR / MOUVEMENT_VOL     # $ par point de vol max
+MOUVEMENT_GAMMA = 15.0   # mouvement de spot de référence pour le gamma, en $ (≈ 2 % du SPY)
+# perte gamma = ½ × |gamma| × mouvement²  →  on cherche le gamma qui fait perdre tout le budget
+LIMITE_GAMMA = 2 * BUDGET_PERTE_JOUR / MOUVEMENT_GAMMA ** 2
 
 
-def verifier_limites(total_delta, total_vega):
+def verifier_limites(total_delta, total_vega, total_gamma=0):
     alertes = []
     if abs(total_delta) > LIMITE_DELTA:
         alertes.append(f"Delta {round(total_delta, 1)} hors limite (±{round(LIMITE_DELTA)})")
     if abs(total_vega) > LIMITE_VEGA:
         alertes.append(f"Vega {round(total_vega, 1)} hors limite (±{round(LIMITE_VEGA)})")
+    if total_gamma < -LIMITE_GAMMA:   # seul le gamma COURT est limité
+        alertes.append(f"Gamma {round(total_gamma, 1)} : court gamma au-delà de la limite (−{round(LIMITE_GAMMA)})")
     return alertes
 
 

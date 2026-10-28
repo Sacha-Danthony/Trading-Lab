@@ -7,7 +7,7 @@ from quoting import coter, decision_client, executer_rfq, proba_acceptation, exp
 from book_greeks import (delta_net_book, gamma_net_book, vega_net_book, theta_net_book,
                          valeur_position, hedge_delta,delta_position, gamma_position, vega_position, valeur_modele, multiplicateur)
 from limites import (verifier_limites, risque_apres_trade, trade_bloque, hedge_necessaire, skew_suggere, hedge_vega_necessaire,
-                         LIMITE_STRESS, LIMITE_DELTA, LIMITE_VEGA, grille_stress_complete, SEUIL_HEDGE, SEUIL_HEDGE_VEGA)
+                         LIMITE_STRESS, LIMITE_DELTA, LIMITE_VEGA, LIMITE_GAMMA, grille_stress_complete, SEUIL_HEDGE, SEUIL_HEDGE_VEGA)
 from data import get_spot_price, get_historique_spot,PERIODES
 from markout import markout_par_client, spread_suggere
 from pnl import pnl_explain
@@ -172,7 +172,8 @@ def html_table(df, formats, colonnes_couleur=()):
     return f'<table class="t"><tr>{entete}</tr>{lignes}</table>'
 
 def heatmap_html(df, limite):
-    entete = "<tr><th></th>" + "".join(f"<th>{c}</th>" for c in df.columns) + "</tr>"
+    entete = ('<tr><th style="color:#888;font-size:11px">VOL ↓ / SPY →</th>'
+              + "".join(f"<th>SPY {c}</th>" for c in df.columns) + "</tr>")
     lignes = ""
     for idx, row in df.iterrows():
         cases = ""
@@ -226,7 +227,7 @@ def couleur_vol(v, lo=10, hi=30):
     return f"rgb({r},{g},{bl})"
 
 # --- Limites (calculées AVANT le bandeau pour le voyant) ---
-limites_depassees = verifier_limites(total_delta, total_vega)
+limites_depassees = verifier_limites(total_delta, total_vega, total_gamma)
 df_stress = pd.DataFrame(grille_stress_complete(book, surface, spot_actuel, R)).T
 
 pire_pnl = df_stress.min().min()
@@ -481,7 +482,7 @@ with onglet_risque:
 
  html = (
      ligne("DELTA", f"{total_delta:+,.1f} {TICKER}", abs(total_delta) / LIMITE_DELTA * 100)
-     + ligne("GAMMA", f"{total_gamma:+,.2f} {TICKER}/$")
+     + ligne("GAMMA", f"{total_gamma:+,.2f} / −{LIMITE_GAMMA:.0f} {TICKER}/$", max(-total_gamma, 0) / LIMITE_GAMMA * 100)
      + ligne("VEGA", f"{total_vega:+,.1f} $/vol", abs(total_vega) / LIMITE_VEGA * 100)
      + ligne("THETA", f"{total_theta:+,.1f} $/jour", cls=couleur(total_theta))
      + ligne("PIRE STRESS (GRILLE)", f"{pire_pnl:+,.0f} / {LIMITE_STRESS:,.0f} $",
