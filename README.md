@@ -7,7 +7,15 @@ et le trader gère le book qui en résulte : Greeks, limites de risque, stress t
 Les données de marché sont réelles (spot et chaînes d'options SPY via Yahoo Finance, **retardées**).
 Les clients, leurs décisions et tous les trades sont **simulés** : aucun ordre réel n'est jamais envoyé.
 
-![Écran du desk](docs/terminal.png)
+**Onglet Desk** : flux client, book et risques sur un seul écran.
+
+![Onglet Desk](docs/terminal.png)
+
+**Onglet Analyse** : cours du SPY, stress test, P&L et surface de volatilité.
+
+![Onglet Analyse : cours du SPY et volatilité](docs/analyse.png)
+
+![Onglet Analyse : P&L, stress test et surface de vol](docs/analyse2.png)
 
 ---
 
