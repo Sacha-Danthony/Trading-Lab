@@ -81,7 +81,10 @@ def valeur_modele(position, surface, r, S, choc_vol=0, jours=0):
     if position["type"] == "stock":
         return S
     T = max(calculer_T(position["maturite"]) - jours / 365, 0.5 / 365)
-    sigma = get_vol(K=position["strike"], T=T, surface=surface) + choc_vol / 100
+    vol = get_vol(K=position["strike"], T=T, surface=surface)
+    if vol is None:   # échéance avancée hors de la surface : on garde la vol à l'échéance actuelle
+        vol = get_vol(K=position["strike"], T=calculer_T(position["maturite"]), surface=surface)
+    sigma = vol + choc_vol / 100
     sigma = max(sigma, 0.01)   # une vol ne peut pas être négative
     if position["type"] == "call":
         return prix_call(S=S, K=position["strike"], T=T, r=r, sigma=sigma)

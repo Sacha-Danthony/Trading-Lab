@@ -33,7 +33,7 @@ def generer_rfq(ticker=TICKER):
     return rfq
 
 
-def generer_lot_rfq(ticker=TICKER, nb_min=3, nb_max=8):
+def generer_lot_rfq(ticker=TICKER, nb_min=5, nb_max=8):
     spot = get_spot_price(ticker)
     maturites_brutes = get_maturites(ticker)
     maturites = filtrer_maturites(maturites_brutes)
